@@ -13,6 +13,12 @@ import struct Tokenizers.ToolSpec
 /// An actor responsible for running model inference.
 private let modelRunnerLogger: Logger = .init(subsystem: "SwamaKit", category: "ModelRunner")
 
+// MARK: - InferenceSafetyLimits
+
+private enum InferenceSafetyLimits {
+    static let multimodalContextLimit = 4096
+}
+
 // MARK: - ModelRunner
 
 public actor ModelRunner {
@@ -79,6 +85,24 @@ public actor ModelRunner {
             var toolCalls: [MLXLMCommon.ToolCall] = []
 
             let rawOutputStorage = RawOutputBuffer()
+
+            let hasMediaInput = userInput.hasMediaContent
+            let configuredContextLimit = await ContextLimitConfig.shared.currentLimit()
+            let effectiveContextLimit = hasMediaInput
+                ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
+                : configuredContextLimit
+            
+            if hasMediaInput, effectiveContextLimit < configuredContextLimit {
+                modelRunnerLogger.info(
+                    "Multimodal request context limit clamped from \(configuredContextLimit) to \(effectiveContextLimit)"
+                )   
+            }       
+                    
+            var effectiveParameters = parameters
+            if effectiveParameters.maxKVSize == nil {
+                effectiveParameters.maxKVSize = effectiveContextLimit
+            }       
+            let generationParameters = effectiveParameters
 
             var effectiveInput = userInput
             if case let .chat(messages) = userInput.prompt {
@@ -198,7 +222,18 @@ private func trimChatMessagesInternal(
         )
     }
 
+    func hasMedia(_ messages: [MLXLMCommon.Chat.Message]) -> Bool {
+        messages.contains { !$0.images.isEmpty || !$0.videos.isEmpty }
+    }
+
+    func hasNonEmptyUserMessage(_ messages: [MLXLMCommon.Chat.Message]) -> Bool {
+        messages.contains {
+            $0.role == .user && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     var workingMessages = chatMessages
+    var didTrimContent = false
     var trimmableIndices = workingMessages.enumerated()
         .filter { !isProtected($0.element) }
         .map(\.offset)
@@ -261,6 +296,7 @@ private func trimChatMessagesInternal(
             additionalContext: additionalContext,
             context: context
         )
+        didTrimContent = true
 
         if workingMessages[index].content.isEmpty {
             workingMessages.remove(at: index)
@@ -274,6 +310,17 @@ private func trimChatMessagesInternal(
         }
     }
 
+    // Never collapse to an empty-user prompt. If trimming removed all user text,
+    // restore the latest non-empty user message from the original request.
+    if !hasNonEmptyUserMessage(workingMessages),
+       let fallbackUser = chatMessages.reversed().first(where: {
+           $0.role == .user && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+       })
+    {
+        workingMessages = [fallbackUser]
+        didTrimContent = true
+    }
+
     let finalInput = buildInput(with: workingMessages)
     let finalTokenCount = try await tokenCount(for: finalInput, context: context)
 
@@ -284,7 +331,7 @@ private func trimChatMessagesInternal(
         throw ContextLimitError.exceededAfterTrimming(limit: limit, promptTokens: finalTokenCount)
     }
 
-    if finalTokenCount < initialTokenCount {
+    if didTrimContent, finalTokenCount < initialTokenCount {
         modelRunnerLogger.info(
             "Context trimmed to \(finalTokenCount) tokens (limit \(limit))"
         )
@@ -331,4 +378,33 @@ private func estimateTokenCount(
     let estimatedMediaTokens = mediaItems * 400
 
     return templateTokens.count + estimatedMediaTokens
+}
+
+private extension MLXLMCommon.UserInput {
+    var hasMediaContent: Bool {
+        switch prompt {
+        case .text:
+            false
+        case let .chat(messages):
+            messages.contains { !$0.images.isEmpty || !$0.videos.isEmpty }
+        case let .messages(messages):
+            messages.contains { message in
+                message.keys.contains { key in
+                    let normalized = key.lowercased()
+                    return normalized.contains("image") || normalized.contains("video")
+                }
+            }
+        }
+    }
+}
+
+private func tokenLength(_ tokens: MLXArray) -> Int {
+    switch tokens.ndim {
+    case 0:
+        1
+    case 1:
+        tokens.count
+    default:
+        tokens.dim(-1)
+    }
 }
