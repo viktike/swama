@@ -29,7 +29,7 @@ public enum CompletionsHandler {
 
     public struct Message: Decodable, Encodable, Sendable {
         let role: String
-        let content: MessageContent
+        let content: MessageContent?
         let tool_calls: [ResponseToolCall]?
 
         private enum CodingKeys: String, CodingKey {
@@ -401,21 +401,45 @@ public enum CompletionsHandler {
         channel: Channel
     ) async {
         do {
-            guard let payload = parsePayload(body),
-                  !payload.messages.isEmpty
-            else {
+           // 1. Parse the payload
+           guard let payload = parsePayload(body) else {
+               try? await respondError(
+                   channel: channel,
+                   status: .badRequest,
+                   message: "Invalid JSON payload"
+               )
+               return
+            }
+
+           // 2. Map messages to fix the Tool Call "Empty Content" requirement
+           let validatedMessages: [CompletionsHandler.Message] = payload.messages.map { msg in
+               if msg.role == "assistant" && msg.content == nil {
+                   // We need to ensure content is a blank string.
+                   // Try the most common enum cases for Swama/OpenAI wrappers:
+                   return CompletionsHandler.Message(
+                       role: msg.role,
+                       content: .text(""),
+                       tool_calls: msg.tool_calls
+                   )
+               }
+               return msg
+           }
+
+
+            guard !validatedMessages.isEmpty else {
                 try? await respondError(
                     channel: channel,
                     status: .badRequest,
-                    message: "Invalid request payload or missing messages"
+                    message: "Messages array cannot be empty"
                 )
                 return
             }
 
+
             let resolvedModelName = ModelAliasResolver.resolve(name: payload.model)
 
             // Convert messages to MLX Chat.Message format
-            let chatMessages = try convertToMLXChatMessages(payload.messages)
+            let chatMessages = try convertToMLXChatMessages(validatedMessages)
 
             let parameters = GenerateParameters(
                 maxTokens: payload.max_tokens,
@@ -512,9 +536,10 @@ public enum CompletionsHandler {
                 throw CompletionsError.invalidRole(message.role)
             }
 
-            let content = message.content.textContent
-            let imageURLs = message.content.imageURLs
-            let images = imageURLs.compactMap { urlString in
+            let content = message.content?.textContent ?? ""
+
+            let imageURLs = message.content?.imageURLs
+            let images = (imageURLs ?? []).compactMap { urlString in
                 URL(string: urlString).map { MLXLMCommon.UserInput.Image.url($0) }
             }
 
