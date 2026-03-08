@@ -102,7 +102,7 @@ public actor ModelRunner {
             if effectiveParameters.maxKVSize == nil {
                 effectiveParameters.maxKVSize = effectiveContextLimit
             }       
-            let generationParameters = effectiveParameters
+            // let generationParameters = effectiveParameters
 
             var effectiveInput = userInput
             if case let .chat(messages) = userInput.prompt {
