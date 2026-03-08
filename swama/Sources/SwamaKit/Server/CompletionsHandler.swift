@@ -38,7 +38,7 @@ public enum CompletionsHandler {
             case tool_calls
         }
 
-        public init(role: String, content: MessageContent, tool_calls: [ResponseToolCall]? = nil) {
+        public init(role: String, content: MessageContent? = nil, tool_calls: [ResponseToolCall]? = nil) {
             self.role = role
             self.content = content
             self.tool_calls = tool_calls
@@ -47,14 +47,16 @@ public enum CompletionsHandler {
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             role = try container.decode(String.self, forKey: .role)
-            content = try container.decode(MessageContent.self, forKey: .content)
+            content = try container.decodeIfPresent(MessageContent.self, forKey: .content)
             tool_calls = try container.decodeIfPresent([ResponseToolCall].self, forKey: .tool_calls)
         }
 
         public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(role, forKey: .role)
-            try container.encode(content, forKey: .content)
+            if content != nil {
+                try container.encode(content, forKey: .content)
+            }
             if let tool_calls, !tool_calls.isEmpty {
                 try container.encode(tool_calls, forKey: .tool_calls)
             }
