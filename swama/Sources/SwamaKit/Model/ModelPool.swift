@@ -527,9 +527,17 @@ public actor ModelPool {
 
         do {
             if isVLM {
+                NSLog(
+                    "SwamaKit.ModelPool: loading VLM %@",
+                    modelName
+                )
                 return try await VLMModelFactory.shared.loadContainer(configuration: localConfig)
             }
             else {
+                NSLog(
+                    "SwamaKit.ModelPool: loading LLM %@",
+                    modelName
+                )
                 return try await LLMModelFactory.shared.loadContainer(configuration: localConfig)
             }
         }
