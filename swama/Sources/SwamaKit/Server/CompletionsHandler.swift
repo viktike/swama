@@ -209,11 +209,13 @@ public enum CompletionsHandler {
 
     /// OpenAI-compatible tool call structures for response
     public struct ResponseToolCall: Encodable, Decodable, Sendable {
+        let index: Int?
         let id: String
         let type: String
         let function: ResponseFunction
 
-        public init(id: String, type: String = "function", function: ResponseFunction) {
+        public init(index: Int = 0, id: String, type: String = "function", function: ResponseFunction) {
+            self.index = index
             self.id = id
             self.type = type
             self.function = function
@@ -221,6 +223,7 @@ public enum CompletionsHandler {
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            index = 0
             id = try container.decode(String.self, forKey: .id)
             type = try container.decode(String.self, forKey: .type)
             function = try container.decode(ResponseFunction.self, forKey: .function)
@@ -633,6 +636,7 @@ public enum CompletionsHandler {
                 }
 
             return ResponseToolCall(
+                index: 0,
                 id: "call_\(UUID().uuidString)",
                 type: "function",
                 function: ResponseFunction(
@@ -765,6 +769,7 @@ public enum CompletionsHandler {
                             }
 
                         let toolCallDict: [String: Any] = [
+                            "index": 0,
                             "id": "call_\(UUID().uuidString)",
                             "type": "function",
                             "function": [
@@ -781,6 +786,7 @@ public enum CompletionsHandler {
                             "choices": [["index": 0, "delta": ["tool_calls": [toolCallDict]],
                                          "finish_reason": NSNull()]]
                         ]
+
                         Task {
                             try? await writeSSEJSON(channel: channel, payload: toolCallDelta)
                         }
