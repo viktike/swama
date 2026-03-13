@@ -19,9 +19,11 @@ public enum CompletionsHandler {
     public struct CompletionRequest: Decodable, Sendable {
         let model: String
         let messages: [Message]
+        let quantization: Int?
         let temperature: Float?
         let top_p: Float?
         let max_tokens: Int?
+        let step_size: Int?
         let stream: Bool?
         let tools: [Tool]?
         let tool_choice: ToolChoice?
@@ -445,8 +447,10 @@ public enum CompletionsHandler {
 
             let parameters = GenerateParameters(
                 maxTokens: payload.max_tokens,
+                kvBits: payload.quantization ?? nil,
                 temperature: payload.temperature ?? 0.6,
-                topP: payload.top_p ?? 1.0
+                topP: payload.top_p ?? 1.0,
+                prefillStepSize: payload.step_size ?? 512,
             )
 
             // Convert tools to MLX ToolSpec format once here
