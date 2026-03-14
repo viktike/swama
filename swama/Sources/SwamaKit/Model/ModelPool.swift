@@ -499,6 +499,17 @@ public actor ModelPool {
         // Ensure VLM registry is initialized
         ensureVLMRegistryInitialized()
 
+        let lowercaseName = modelName.lowercased()
+        if lowercaseName.contains("reap") {
+            return false
+        }
+        if lowercaseName.contains("dwq") {
+            return false
+        }
+        if lowercaseName.contains("gemma3n") {	// VLM, but no implementation
+            return false
+        }
+
         if vlmRegistryCache!.keys.contains(where: { $0.caseInsensitiveCompare(modelName) == .orderedSame }) {
             return true
         }
@@ -525,8 +536,20 @@ public actor ModelPool {
             extraEOSTokens: extraEOSTokens
         )
 
+        var modelIsVLM = isVLM
+        let lowercaseName = modelName.lowercased()
+        if lowercaseName.contains("reap") {
+            modelIsVLM = false
+        }
+        if lowercaseName.contains("dwq") {
+            modelIsVLM = false
+        }
+        if lowercaseName.contains("gemma3n") {  // VLM, but no implementation
+            modelIsVLM = false
+        }
+
         do {
-            if isVLM {
+            if modelIsVLM {
                 NSLog(
                     "SwamaKit.ModelPool: loading VLM %@",
                     modelName
@@ -791,6 +814,16 @@ public actor ModelPool {
     }
 
     private func isVLMModelByLocalConfig(_ modelName: String) -> Bool {
+        let lowercaseName = modelName.lowercased()
+        if lowercaseName.contains("reap") {
+            return false
+        }
+        if lowercaseName.contains("dwq") {
+            return false
+        }
+        if lowercaseName.contains("gemma3n") {  // VLM, but no implementation
+            return false
+        }
         let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
         let candidateConfigFiles = [
             "config.json",
@@ -981,6 +1014,10 @@ public actor ModelPool {
 enum ModelTypeDetector {
     static func isVLMModelName(_ modelName: String) -> Bool {
         let lowercaseName = modelName.lowercased()
+
+        if lowercaseName.contains("reap") {
+            return false
+        }
 
         if lowercaseName.contains("gemma") {
             // Gemma models with DWQ are LLM (not VLM)
