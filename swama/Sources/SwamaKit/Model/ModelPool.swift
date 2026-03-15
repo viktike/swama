@@ -506,7 +506,10 @@ public actor ModelPool {
         if lowercaseName.contains("dwq") {
             return false
         }
-        if lowercaseName.contains("gemma3n") {	// VLM, but no implementation
+        if lowercaseName.contains("gemma-3n") {	// VLM, but no implementation
+            return false
+        }
+        if lowercaseName.contains("omnicoder") { // model_type qwen3_5_text
             return false
         }
 
@@ -544,7 +547,10 @@ public actor ModelPool {
         if lowercaseName.contains("dwq") {
             modelIsVLM = false
         }
-        if lowercaseName.contains("gemma3n") {  // VLM, but no implementation
+        if lowercaseName.contains("gemma-3n") {  // VLM, but no implementation
+            modelIsVLM = false
+        }
+        if lowercaseName.contains("omnicoder") { // model_type qwen3_5_text
             modelIsVLM = false
         }
 
@@ -821,9 +827,13 @@ public actor ModelPool {
         if lowercaseName.contains("dwq") {
             return false
         }
-        if lowercaseName.contains("gemma3n") {  // VLM, but no implementation
+        if lowercaseName.contains("gemma-3n") {  // VLM, but no implementation
             return false
         }
+        if lowercaseName.contains("omnicoder") { // model_type qwen3_5_text
+            return false
+        }
+
         let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
         let candidateConfigFiles = [
             "config.json",
