@@ -498,6 +498,18 @@ public actor ModelPool {
     private func determineIfVLMModel(modelName: String) -> Bool {
         // Ensure VLM registry is initialized
         ensureVLMRegistryInitialized()
+        
+        let lowercaseName = modelName.lowercased()
+        
+        if lowercaseName.contains("reap") {       // Router expert pruned
+            return false
+        }
+        if lowercaseName.contains("dwq") {        // Distilled weight quantized
+            return false
+        }
+        if lowercaseName.contains("gemma3n") {    // VLM, but no implementation
+            return false
+        }
 
         if vlmRegistryCache!.keys.contains(where: { $0.caseInsensitiveCompare(modelName) == .orderedSame }) {
             return true
@@ -527,9 +539,17 @@ public actor ModelPool {
 
         do {
             if isVLM {
+                NSLog(
+                    "SwamaKit.ModelPool: loading VLM %@",
+                    modelName
+                )
                 return try await VLMModelFactory.shared.loadContainer(configuration: localConfig)
             }
             else {
+                NSLog(
+                    "SwamaKit.ModelPool: loading LLM %@",
+                    modelName
+                )
                 return try await LLMModelFactory.shared.loadContainer(configuration: localConfig)
             }
         }
