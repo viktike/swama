@@ -22,6 +22,8 @@ public enum CompletionsHandler {
         var quantization: Int?
         let temperature: Float?
         let top_p: Float?
+        let top_k: Int?
+        let min_p: Float?
         let max_tokens: Int?
         let step_size: Int?
         let stream: Bool?
@@ -461,6 +463,8 @@ public enum CompletionsHandler {
                 kvBits: payload.quantization ?? nil,
                 temperature: payload.temperature ?? 0.6,
                 topP: payload.top_p ?? 1.0,
+                topK: payload.top_k ?? 0,
+                minP: payload.top_p ?? 0.0,
                 prefillStepSize: payload.step_size ?? 512,
             )
 
