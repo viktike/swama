@@ -19,9 +19,11 @@ public enum CompletionsHandler {
     public struct CompletionRequest: Decodable, Sendable {
         let model: String
         let messages: [Message]
+        var quantization: Int?
         let temperature: Float?
         let top_p: Float?
         let max_tokens: Int?
+        let step_size: Int?
         let stream: Bool?
         let tools: [Tool]?
         let tool_choice: ToolChoice?
@@ -398,21 +400,33 @@ public enum CompletionsHandler {
     }
 
     public static func handle(
-        requestHead _: HTTPRequestHead,
+        requestHead: HTTPRequestHead,
         body: ByteBuffer?,
         channel: Channel
     ) async {
         do {
             // 1. Parse the payload
-            guard let payload = parsePayload(body) else {
+            guard var payload = parsePayload(body) else {
                 try? await respondError(
                     channel: channel,
                     status: .badRequest,
                     message: "Invalid JSON payload"
                 )
                 return
-             }
+            }
 
+            if let authHeader = requestHead.headers.first(where: { $0.name.lowercased() == "authorization" })?.value {
+                let parts = authHeader.split(separator: " ", maxSplits: 1)
+                if parts.count == 2,
+                parts[0].lowercased() == "bearer" {
+                    let tokenStr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !tokenStr.isEmpty,
+                    let parsedInt = Int(tokenStr) {
+                        payload.quantization = parsedInt
+                    }
+               }
+            }
+            
             // 2. Map messages to fix the Tool Call "Empty Content" requirement
             let validatedMessages: [CompletionsHandler.Message] = payload.messages.map { msg in
                 if msg.role == "assistant" && msg.content == nil {
@@ -444,8 +458,10 @@ public enum CompletionsHandler {
 
             let parameters = GenerateParameters(
                 maxTokens: payload.max_tokens,
+                kvBits: payload.quantization ?? nil,
                 temperature: payload.temperature ?? 0.6,
-                topP: payload.top_p ?? 1.0
+                topP: payload.top_p ?? 1.0,
+                prefillStepSize: payload.step_size ?? 512,
             )
 
             // Convert tools to MLX ToolSpec format once here
