@@ -16,24 +16,25 @@
       "location" : "https://github.com/ml-explore/mlx-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "a2f0d764c1c233f05e87a0090a26df5f48a3eb48"
+        "revision" : "2512c5bebfd801c817b5d07828cbfdc44c76fab4"
       }
     },
     {
       "identity" : "mlx-swift-audio",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/DePasqualeOrg/mlx-swift-audio.git",
+      "location" : "https://github.com/viktike/mlx-swift-audio.git",
       "state" : {
-        "revision" : "2a0e99ecc66f5c04b20d6d8751a4c8817cc4f621"
+        "branch": "main",
+        "revision" : "6c382d7cf2a18192b28ca692ee26df76fe47878d"
       }
     },
     {
       "identity" : "mlx-swift-lm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ml-explore/mlx-swift-lm",
+      "location" : "https://github.com/viktike/mlx-swift-lm",
       "state" : {
-        "branch" : "main",
-        "revision" : "06bfeed73f5b93f476057c8dc6d9c8a329ae3072"
+        "branch" : "viktike",
+        "revision" : "808a1b9eec1708b275c49d86e1b129e37f6a18f1"
       }
     },
     {

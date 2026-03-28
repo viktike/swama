@@ -19,9 +19,9 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        .package(url: "https://github.com/viktike/mlx-swift-lm", branch: "viktike"),
         .package(url: "https://github.com/ml-explore/mlx-swift", branch: "main"),
-        .package(url: "https://github.com/DePasqualeOrg/mlx-swift-audio.git", revision: "2a0e99ecc66f5c04b20d6d8751a4c8817cc4f621"),
+        .package(url: "https://github.com/viktike/mlx-swift-audio.git", branch: "main"),
     ],
     targets: [
         .target(
