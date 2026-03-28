@@ -167,7 +167,6 @@ struct Transcribe: AsyncParsableCommand {
                 // JSON output for detailed results
                 let segments = results.flatMap(\.segments).map { segment in
                     [
-                        "id": segment.id,
                         "start": segment.start,
                         "end": segment.end,
                         "text": segment.text
@@ -193,12 +192,12 @@ struct Transcribe: AsyncParsableCommand {
         }
     }
 
-    private func formatTime(_ seconds: Float) -> String {
+    private func formatTime(_ seconds: Double) -> String {
         let totalSeconds = Int(seconds)
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let secs = totalSeconds % 60
-        let milliseconds = Int((seconds - Float(totalSeconds)) * 1000)
+        let milliseconds = Int((seconds - Double(totalSeconds)) * 1000)
 
         if hours > 0 {
             return String(format: "%d:%02d:%02d.%03d", hours, minutes, secs, milliseconds)

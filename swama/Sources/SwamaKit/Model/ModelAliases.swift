@@ -162,6 +162,9 @@ public enum ModelAliasResolver {
         "whisper-medium": "mlx-community/whisper-medium-4bit",
         "whisper-large": "mlx-community/whisper-large-v3-4bit",
         "whisper-large-v3": "mlx-community/whisper-large-v3-4bit",
+        "whisper-large-v3-4bit": "mlx-community/whisper-large-v3-4bit",
+        "whisper-large-v3-8bit": "mlx-community/whisper-large-v3-8bit",
+        "whisper-large-v3-fp16": "mlx-community/whisper-large-v3-fp16",
         "whisper-large-turbo": "mlx-community/whisper-large-v3-turbo-4bit",
         "whisper": "mlx-community/whisper-large-v3-4bit",
 

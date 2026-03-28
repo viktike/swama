@@ -1,57 +1,6 @@
 import Foundation
 @preconcurrency import MLXAudio
 
-// MARK: - TranscriptionResult
-
-public struct TranscriptionResult: Sendable {
-    public struct Segment: Sendable {
-        public var id: Int
-        public var seek: Int
-        public var start: Float
-        public var end: Float
-        public var text: String
-        public var tokens: [Int]?
-        public var temperature: Float
-        public var avgLogprob: Float
-        public var compressionRatio: Float
-        public var noSpeechProb: Float
-
-        public init(
-            id: Int = 0,
-            seek: Int = 0,
-            start: Float = 0,
-            end: Float = 0,
-            text: String = "",
-            tokens: [Int]? = nil,
-            temperature: Float = 0,
-            avgLogprob: Float = 0,
-            compressionRatio: Float = 0,
-            noSpeechProb: Float = 0
-        ) {
-            self.id = id
-            self.seek = seek
-            self.start = start
-            self.end = end
-            self.text = text
-            self.tokens = tokens
-            self.temperature = temperature
-            self.avgLogprob = avgLogprob
-            self.compressionRatio = compressionRatio
-            self.noSpeechProb = noSpeechProb
-        }
-    }
-
-    public var text: String
-    public var language: String?
-    public var segments: [Segment]
-
-    public init(text: String = "", language: String? = nil, segments: [Segment] = []) {
-        self.text = text
-        self.language = language
-        self.segments = segments
-    }
-}
-
 // MARK: - TranscriptionResponseFormat
 
 /// Response format for transcription output
@@ -136,36 +85,20 @@ public class SpeechToTextRunner: @unchecked Sendable {
 
         // Get results with better error handling
         do {
-            let transcriptionText = try await transcribeWithMLXAudio(
+            let transcription = try await transcribeWithMLXAudio(
                 stt: stt,
                 audioPath: audioPath,
-                language: language
+                language: language,
+                temperature: temperature
             )
 
             // MLXAudio does not currently expose segment metadata in this integration,
             // so we return a single segment for verbose requests.
             switch responseFormat {
             case .simple:
-                return .simple(transcriptionText)
+                return .simple(transcription.text)
             case .verboseJson:
-                let segment = TranscriptionResult.Segment(
-                    id: 0,
-                    seek: 0,
-                    start: 0,
-                    end: 0,
-                    text: transcriptionText,
-                    tokens: nil,
-                    temperature: temperature,
-                    avgLogprob: 0,
-                    compressionRatio: 0,
-                    noSpeechProb: 0
-                )
-                let result = TranscriptionResult(
-                    text: transcriptionText,
-                    language: language,
-                    segments: [segment]
-                )
-                return .detailed([result])
+                return .detailed([transcription])
             }
         }
         catch {
@@ -188,25 +121,27 @@ public class SpeechToTextRunner: @unchecked Sendable {
     private func transcribeWithMLXAudio(
         stt: any STTEngine,
         audioPath: String,
-        language: String?
-    ) async throws -> String {
+        language: String?,
+        temperature: Float = 0.0,
+        timestamps: TimestampGranularity = .segment // or .word
+    ) async throws -> TranscriptionResult {
         let audioURL = URL(fileURLWithPath: audioPath)
         if let language, let sttLanguage = resolveLanguage(language) {
             // Cast to WhisperEngine to access language parameter
             if let whisperEngine = stt as? WhisperEngine {
-                let result = try await whisperEngine.transcribe(audioURL, language: sttLanguage)
-                return result.text
+                let result = try await whisperEngine.transcribe(audioURL, language: sttLanguage, temperature: temperature, timestamps: timestamps)
+                return result
             }
         }
 
         // For non-Whisper engines or no language specified
         if let whisperEngine = stt as? WhisperEngine {
-            let result = try await whisperEngine.transcribe(audioURL)
-            return result.text
+            let result = try await whisperEngine.transcribe(audioURL, temperature: temperature, timestamps: timestamps)
+            return result
         }
         else if let funasrEngine = stt as? FunASREngine {
-            let result = try await funasrEngine.transcribe(audioURL)
-            return result.text
+            let result = try await funasrEngine.transcribe(audioURL, temperature: temperature)
+            return result
         }
 
         throw AudioError.transcriptionFailed("Unsupported STT engine type")
@@ -218,6 +153,9 @@ public class SpeechToTextRunner: @unchecked Sendable {
         case "en",
              "english":
             return .english
+        case "hu",
+             "hungarian":
+            return .hungarian
         case "chinese",
              "zh",
              "zh-cn",
@@ -280,17 +218,18 @@ private extension SpeechToTextRunner {
         case whisper
         case funASR
     }
-
+    
     func createSTT(for modelName: String) throws -> any STTEngine {
         switch resolveModelKind(from: modelName) {
         case .funASR:
             return STT.funASR()
         case .whisper:
             let whisperModel = resolveWhisperModel(from: modelName)
-            return STT.whisper(model: whisperModel)
+            let whisperQuant = resolveWhisperQuant(from: modelName)
+            return STT.whisper(model: whisperModel, quantization: whisperQuant)
         }
     }
-
+    
     func resolveModelKind(from modelName: String) -> AudioModelKind {
         let normalized = modelName.lowercased()
         if normalized.hasPrefix("funasr") || normalized.hasPrefix("fun-asr") {
@@ -298,15 +237,18 @@ private extension SpeechToTextRunner {
         }
         return .whisper
     }
-
+    
     func resolveWhisperModel(from modelName: String) -> WhisperModelSize {
         let normalized = modelName.lowercased()
         switch normalized {
         case "whisper-large",
-             "whisper-large-v3":
+            "whisper-large-v3",
+            "whisper-large-v3-4bit",
+            "whisper-large-v3-8bit",
+            "whisper-large-v3-fp16":
             return .large
         case "whisper-large-turbo",
-             "whisper-large-v3-turbo":
+            "whisper-large-v3-turbo":
             return .largeTurbo
         case "whisper-medium":
             return .medium
@@ -318,6 +260,18 @@ private extension SpeechToTextRunner {
             return .tiny
         default:
             return .large
+        }
+    }
+
+    func resolveWhisperQuant(from modelName: String) -> WhisperQuantization {
+        let normalized = modelName.lowercased()
+        switch normalized {
+        case "whisper-large-v3-8bit":
+            return .q8
+        case "whisper-large-v3-fp16":
+            return .fp16
+        default:
+            return .q4
         }
     }
 }

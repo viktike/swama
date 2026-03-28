@@ -6,6 +6,7 @@
 import Foundation
 import NIOCore
 import NIOHTTP1
+@preconcurrency import MLXAudio
 
 // MARK: - TranscriptionsHandler
 
@@ -48,16 +49,21 @@ public enum TranscriptionsHandler {
         let task: String? // For verbose_json format ("transcribe")
 
         struct Segment: Encodable {
-            let id: Int
-            let seek: Int
             let start: Double
             let end: Double
             let text: String
             let tokens: [Int]?
-            let temperature: Double?
             let avg_logprob: Double?
-            let compression_ratio: Double?
             let no_speech_prob: Double?
+            let words: [Word]?
+            
+            struct Word: Encodable {
+                let word: String
+                let tokens: [Int]?
+                let start: Float
+                let end: Float
+                let probability: Float
+            }
         }
     }
 
@@ -79,10 +85,10 @@ public enum TranscriptionsHandler {
             // Parse multipart form data
             let (audioData, request) = try parseMultipartRequest(body: body, contentType: contentType)
 
-            // Validate file size (100MB limit)
-            let maxFileSize = 100 * 1024 * 1024 // 100MB
+            // Validate file size (1GB limit)
+            let maxFileSize = 1024 * 1024 * 1024 // 1GB
             guard audioData.count <= maxFileSize else {
-                throw TranscriptionError.fileTooLarge("File size exceeds 100MB limit")
+                throw TranscriptionError.fileTooLarge("File size exceeds 1GB limit")
             }
 
             // Validate model
@@ -591,16 +597,13 @@ extension TranscriptionsHandler {
 
         return allSegments.map { segment in
             TranscriptionResponse.Segment(
-                id: segment.id,
-                seek: segment.seek,
                 start: Double(segment.start),
                 end: Double(segment.end),
-                text: segment.text, // Text is already normalized by SpeechToTextRunner
+                text: segment.text,
                 tokens: segment.tokens,
-                temperature: Double(segment.temperature),
-                avg_logprob: Double(segment.avgLogprob),
-                compression_ratio: Double(segment.compressionRatio),
-                no_speech_prob: Double(segment.noSpeechProb)
+                avg_logprob: Double(segment.avgLogProb),
+                no_speech_prob: Double(segment.noSpeechProb),
+                words: segment.words as? [TranscriptionsHandler.TranscriptionResponse.Segment.Word]
             )
         }
     }
