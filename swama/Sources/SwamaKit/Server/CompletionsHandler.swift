@@ -19,7 +19,7 @@ public enum CompletionsHandler {
     public struct CompletionRequest: Decodable, Sendable {
         let model: String
         let messages: [Message]
-        var quantization: Int?
+        var quantization: Float?
         let temperature: Float?
         let top_p: Float?
         let top_k: Int?
@@ -426,8 +426,8 @@ public enum CompletionsHandler {
                 parts[0].lowercased() == "bearer" {
                     let tokenStr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
                     if !tokenStr.isEmpty,
-                    let parsedInt = Int(tokenStr) {
-                        payload.quantization = parsedInt
+                    let parsedFloat = Float(tokenStr) {
+                        payload.quantization = parsedFloat
                     }
                }
             }
