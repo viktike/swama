@@ -237,41 +237,43 @@ private extension SpeechToTextRunner {
         }
         return .whisper
     }
-    
+
     func resolveWhisperModel(from modelName: String) -> WhisperModelSize {
         let normalized = modelName.lowercased()
-        switch normalized {
-        case "whisper-large",
-            "whisper-large-v3",
-            "whisper-large-v3-4bit",
-            "whisper-large-v3-8bit",
-            "whisper-large-v3-fp16":
-            return .large
-        case "whisper-large-turbo",
-            "whisper-large-v3-turbo":
+
+        if normalized.contains("turbo") {
             return .largeTurbo
-        case "whisper-medium":
-            return .medium
-        case "whisper-small":
-            return .small
-        case "whisper-base":
-            return .base
-        case "whisper-tiny":
-            return .tiny
-        default:
+        }
+        if normalized.contains("large") {
             return .large
         }
+        if normalized.contains("medium") {
+            return .medium
+        }
+        if normalized.contains("small") {
+            return .small
+        }
+        if normalized.contains("base") {
+            return .base
+        }
+        if normalized.contains("tiny") {
+            return .tiny
+        }
+        return .large
     }
 
     func resolveWhisperQuant(from modelName: String) -> WhisperQuantization {
         let normalized = modelName.lowercased()
-        switch normalized {
-        case "whisper-large-v3-8bit":
-            return .q8
-        case "whisper-large-v3-fp16":
+    
+        if normalized.contains("fp16") {
             return .fp16
-        default:
+        }
+        if normalized.contains("8bit") {
+            return .q8
+        }
+        if normalized.contains("4bit") {
             return .q4
         }
+        return .q4
     }
 }
