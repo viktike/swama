@@ -16,7 +16,7 @@ private let modelRunnerLogger: Logger = .init(subsystem: "SwamaKit", category: "
 // MARK: - InferenceSafetyLimits
 
 private enum InferenceSafetyLimits {
-    static let multimodalContextLimit = 4096
+    static let multimodalContextLimit = 131072
 }
 
 // MARK: - ModelRunner

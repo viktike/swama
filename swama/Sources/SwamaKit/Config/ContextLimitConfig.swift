@@ -7,7 +7,7 @@ public actor ContextLimitConfig {
     public static let shared: ContextLimitConfig = .init()
 
     public enum Constants {
-        public static let defaultLimit = 16384
+        public static let defaultLimit = 262144
     }
 
     private var limit: Int
