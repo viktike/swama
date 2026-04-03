@@ -507,9 +507,13 @@ public actor ModelPool {
         if lowercaseName.contains("dwq") {        // Distilled weight quantized
             return false
         }
-        if lowercaseName.contains("gemma3n") {    // VLM, but no implementation
+        if lowercaseName.contains("gemma-3n") {   // VLM, but no implementation
             return false
         }
+        if lowercaseName.contains("gemma-4") {    // VLM, but no implementation
+            return false
+        }
+
 
         if vlmRegistryCache!.keys.contains(where: { $0.caseInsensitiveCompare(modelName) == .orderedSame }) {
             return true
