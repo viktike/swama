@@ -19,7 +19,7 @@ public enum CompletionsHandler {
     public struct CompletionRequest: Decodable, Sendable {
         let model: String
         let messages: [Message]
-        var quantization: Float?
+        var quantization: Int?
         let temperature: Float?
         let top_p: Float?
         let top_k: Int?
@@ -404,6 +404,26 @@ public enum CompletionsHandler {
         }
     }
 
+    public static func kvMode(kv: Int?) -> KVQuantizationMode
+    {
+        switch kv {
+            case 12:
+                return KVQuantizationMode.affine(bits: 12)
+            case 8:
+                return KVQuantizationMode.affine(bits: 8)
+            case 6:
+                return KVQuantizationMode.affine(bits: 6)
+            case 5:
+                return KVQuantizationMode.turboQuant(keyBits: 5, valueBits: 5)
+            case 4:
+                return KVQuantizationMode.turboQuant(keyBits: 4, valueBits: 4)
+            case 3:
+                return KVQuantizationMode.turboQuant(keyBits: 3, valueBits: 3)
+            default:
+                return KVQuantizationMode.none
+        }
+    }
+    
     public static func handle(
         requestHead: HTTPRequestHead,
         body: ByteBuffer?,
@@ -426,8 +446,8 @@ public enum CompletionsHandler {
                 parts[0].lowercased() == "bearer" {
                     let tokenStr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
                     if !tokenStr.isEmpty,
-                    let parsedFloat = Float(tokenStr) {
-                        payload.quantization = parsedFloat
+                    let parsedInt = Int(tokenStr) {
+                        payload.quantization = parsedInt
                     }
                }
             }
@@ -463,7 +483,7 @@ public enum CompletionsHandler {
 
             let parameters = GenerateParameters(
                 maxTokens: payload.max_tokens,
-                kvBits: payload.quantization ?? nil,
+                kvMode: kvMode(kv: payload.quantization),
                 temperature: payload.temperature ?? 0.6,
                 topP: payload.top_p ?? 1.0,
                 topK: payload.top_k ?? 0,
