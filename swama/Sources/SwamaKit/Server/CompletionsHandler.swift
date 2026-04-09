@@ -420,7 +420,7 @@ public enum CompletionsHandler {
             case 4:
                 return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 4)
             case 3:
-                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 3)
+                return KVQuantizationMode.turboQuant(keyBits: 4, valueBits: 3)
             default:
                 return KVQuantizationMode.none
         }
