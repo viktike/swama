@@ -409,16 +409,18 @@ public enum CompletionsHandler {
         switch kv {
             case 12:
                 return KVQuantizationMode.affine(bits: 12)
+            case 10:
+                return KVQuantizationMode.affine(bits: 10)
             case 8:
                 return KVQuantizationMode.affine(bits: 8)
             case 6:
-                return KVQuantizationMode.affine(bits: 6)
+                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 6)
             case 5:
-                return KVQuantizationMode.turboQuant(keyBits: 5, valueBits: 5)
+                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 5)
             case 4:
-                return KVQuantizationMode.turboQuant(keyBits: 4, valueBits: 4)
+                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 4)
             case 3:
-                return KVQuantizationMode.turboQuant(keyBits: 3, valueBits: 3)
+                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 3)
             default:
                 return KVQuantizationMode.none
         }
