@@ -413,12 +413,14 @@ public enum CompletionsHandler {
                 return KVQuantizationMode.affine(bits: 10)
             case 8:
                 return KVQuantizationMode.affine(bits: 8)
+            case 7:
+                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 7)
             case 6:
                 return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 6)
             case 5:
-                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 5)
+                return KVQuantizationMode.turboQuant(keyBits: 6, valueBits: 5)
             case 4:
-                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 4)
+                return KVQuantizationMode.turboQuant(keyBits: 6, valueBits: 4)
             case 3:
                 return KVQuantizationMode.turboQuant(keyBits: 4, valueBits: 3)
             default:
@@ -490,7 +492,7 @@ public enum CompletionsHandler {
                 topP: payload.top_p ?? 1.0,
                 topK: payload.top_k ?? 0,
                 minP: payload.top_p ?? 0.0,
-                prefillStepSize: payload.step_size ?? 512,
+                prefillStepSize: payload.step_size ?? 1024,
             )
 
             // Convert tools to MLX ToolSpec format once here
