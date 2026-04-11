@@ -25,7 +25,7 @@ public enum CompletionsHandler {
         let top_k: Int?
         let min_p: Float?
         let max_tokens: Int?
-        let step_size: Int?
+        var step_size: Int?
         let stream: Bool?
         let tools: [Tool]?
         let tool_choice: ToolChoice?
@@ -454,6 +454,12 @@ public enum CompletionsHandler {
                         payload.quantization = parsedInt
                     }
                }
+            }
+            
+            if let prefillHeader = requestHead.headers.first(where: { $0.name.lowercased() == "x-prefill-step-size" })?.value {
+                if !prefillHeader.isEmpty, let parsedInt = Int(prefillHeader.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    payload.step_size = parsedInt
+                }
             }
             
             // 2. Map messages to fix the Tool Call "Empty Content" requirement
