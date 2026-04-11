@@ -19,16 +19,18 @@ public enum CompletionsHandler {
     public struct CompletionRequest: Decodable, Sendable {
         let model: String
         let messages: [Message]
-        var quantization: Int?
+        var kb_bits: Int? = 0
         let temperature: Float?
         let top_p: Float?
         let top_k: Int?
         let min_p: Float?
         let max_tokens: Int?
-        var step_size: Int?
+        var step_size: Int? = 1024
         let stream: Bool?
         let tools: [Tool]?
         let tool_choice: ToolChoice?
+        var k_bits: Int? = 0
+        var v_bits: Int? = 0
     }
 
     public struct Message: Decodable, Encodable, Sendable {
@@ -404,27 +406,29 @@ public enum CompletionsHandler {
         }
     }
 
-    public static func kvMode(kv: Int?) -> KVQuantizationMode
+    public static func kvMode(kv_bits: Int = 0, k_bits: Int = 0, v_bits: Int = 0) -> KVQuantizationMode
     {
-        switch kv {
-            case 12:
-                return KVQuantizationMode.affine(bits: 12)
-            case 10:
-                return KVQuantizationMode.affine(bits: 10)
-            case 8:
-                return KVQuantizationMode.affine(bits: 8)
-            case 7:
-                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 7)
-            case 6:
-                return KVQuantizationMode.turboQuant(keyBits: 8, valueBits: 6)
-            case 5:
-                return KVQuantizationMode.turboQuant(keyBits: 6, valueBits: 5)
-            case 4:
-                return KVQuantizationMode.turboQuant(keyBits: 6, valueBits: 4)
-            case 3:
-                return KVQuantizationMode.turboQuant(keyBits: 4, valueBits: 3)
-            default:
-                return KVQuantizationMode.none
+        if k_bits != 0 && v_bits != 0 {
+            return .turboQuant(keyBits: k_bits, valueBits: v_bits)
+        } else {
+            switch kv_bits {
+                case 7:
+                    return .turboQuant(keyBits: 8, valueBits: 7)
+                case 6:
+                    return .turboQuant(keyBits: 8, valueBits: 6)
+                case 5:
+                    return .turboQuant(keyBits: 6, valueBits: 5)
+                case 4:
+                    return .turboQuant(keyBits: 5, valueBits: 4)
+                case 3:
+                    return .turboQuant(keyBits: 4, valueBits: 3)
+                default:
+                    if kv_bits == 0 {
+                        return .none
+                    } else {
+                        return .affine(bits: kv_bits)
+                    }
+            }
         }
     }
     
@@ -434,7 +438,7 @@ public enum CompletionsHandler {
         channel: Channel
     ) async {
         do {
-            // 1. Parse the payload
+            // Parse the payload
             guard var payload = parsePayload(body) else {
                 try? await respondError(
                     channel: channel,
@@ -444,6 +448,7 @@ public enum CompletionsHandler {
                 return
             }
 
+            // Use the Authorization: bearer str header for automatic KVCacheQuantization
             if let authHeader = requestHead.headers.first(where: { $0.name.lowercased() == "authorization" })?.value {
                 let parts = authHeader.split(separator: " ", maxSplits: 1)
                 if parts.count == 2,
@@ -451,18 +456,33 @@ public enum CompletionsHandler {
                     let tokenStr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
                     if !tokenStr.isEmpty,
                     let parsedInt = Int(tokenStr) {
-                        payload.quantization = parsedInt
+                        payload.kb_bits = parsedInt
                     }
                }
             }
             
+            // Use custom header X-Prefill-Step-Size: Int[256|512|1024|2048] for adjusting chunking
             if let prefillHeader = requestHead.headers.first(where: { $0.name.lowercased() == "x-prefill-step-size" })?.value {
                 if !prefillHeader.isEmpty, let parsedInt = Int(prefillHeader.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     payload.step_size = parsedInt
                 }
             }
+
+            // Use custom header X-Turbo-Quant-Key-Bits: Int
+            if let kBits = requestHead.headers.first(where: { $0.name.lowercased() == "x-turbo-quant-key-bits" })?.value {
+                if !kBits.isEmpty, let parsedInt = Int(kBits.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    payload.k_bits = parsedInt
+                }
+            }
+
+            // Use custom header X-Turbo-Quant-Value-Bits: Int
+            if let vBits = requestHead.headers.first(where: { $0.name.lowercased() == "x-turbo-quant-value-bits" })?.value {
+                if !vBits.isEmpty, let parsedInt = Int(vBits.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    payload.v_bits = parsedInt
+                }
+            }
             
-            // 2. Map messages to fix the Tool Call "Empty Content" requirement
+            // Map messages to fix the Tool Call "Empty Content" requirement
             let validatedMessages: [CompletionsHandler.Message] = payload.messages.map { msg in
                 if msg.role == "assistant" && msg.content == nil {
                     // We need to ensure content is a blank string.
@@ -493,7 +513,7 @@ public enum CompletionsHandler {
 
             let parameters = GenerateParameters(
                 maxTokens: payload.max_tokens,
-                kvMode: kvMode(kv: payload.quantization),
+                kvMode: kvMode(kv_bits: payload.kb_bits ?? 0, k_bits: payload.k_bits ?? 0, v_bits: payload.v_bits ?? 0),
                 temperature: payload.temperature ?? 0.6,
                 topP: payload.top_p ?? 1.0,
                 topK: payload.top_k ?? 0,
