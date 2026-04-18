@@ -2,15 +2,18 @@ import Foundation
 import MLX
 import MLXEmbedders
 import MLXLMCommon
-import Tokenizers
+import MLXHuggingFace
+import MLXEmbeddersHFAPI
+import MLXEmbeddersTokenizers
 
 /// Loads an embedding model container for the given model name.
-public func loadEmbeddingModelContainer(modelName: String) async throws -> MLXEmbedders.ModelContainer {
-    let config = MLXEmbedders.ModelConfiguration(id: modelName)
-
-    let container: MLXEmbedders.ModelContainer
+public func loadEmbeddingModelContainer(modelName: String) async throws -> EmbedderModelContainer {
     do {
-        container = try await MLXEmbedders.loadModelContainer(configuration: config)
+        let container = try await loadModelContainer(
+            from: HubClient.default,
+            configuration: ModelConfiguration(id: modelName)
+        )
+        return container
     }
     catch {
         fputs(
@@ -25,8 +28,6 @@ public func loadEmbeddingModelContainer(modelName: String) async throws -> MLXEm
         }
         throw error
     }
-
-    return container
 }
 
 // MARK: - EmbeddingRunner
@@ -35,7 +36,7 @@ public func loadEmbeddingModelContainer(modelName: String) async throws -> MLXEm
 public actor EmbeddingRunner {
     // MARK: Lifecycle
 
-    public init(container: MLXEmbedders.ModelContainer) {
+    public init(container: EmbedderModelContainer) {
         self.container = container
         self.isRunning = false
     }
@@ -149,7 +150,7 @@ public actor EmbeddingRunner {
 
     // MARK: Private
 
-    private let container: MLXEmbedders.ModelContainer
+    private let container: EmbedderModelContainer
     private var isRunning: Bool
     private let maxBatchSize = 8
 }

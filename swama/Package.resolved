@@ -178,7 +178,7 @@
       "location" : "https://github.com/viktike/swift-tokenizers-mlx",
       "state" : {
         "branch" : "new",
-        "revision" : "135133f593aef617fa3b32206e6ccb5edb316410"
+        "revision" : "84a3b22d14b57cfd24276d99c9c3ff528f1bbcfb"
       }
     },
     {
@@ -196,7 +196,7 @@
       "location" : "https://github.com/viktike/vmlx-swift-lm.git",
       "state" : {
         "branch" : "new",
-        "revision" : "eba33a468b1e7f08e57caf8c76b9fb546a25d277"
+        "revision" : "4938afe79882e5f48f687dbc850fbf36037a2ce9"
       }
     },
     {

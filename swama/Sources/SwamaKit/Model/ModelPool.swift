@@ -4,6 +4,9 @@ import MLXEmbedders
 import MLXLLM
 import MLXLMCommon
 import MLXVLM
+import MLXHuggingFace
+import MLXLMHFAPI
+import Tokenizers
 
 // MARK: - ModelPoolError
 
@@ -543,14 +546,18 @@ public actor ModelPool {
                     "SwamaKit.ModelPool: loading VLM %@",
                     modelName
                 )
-                return try await VLMModelFactory.shared.loadContainer(configuration: localConfig)
+                return try await VLMModelFactory.shared.loadContainer(
+                    from: HubClient(),
+                    configuration: localConfig)
             }
             else {
                 NSLog(
                     "SwamaKit.ModelPool: loading LLM %@",
                     modelName
                 )
-                return try await LLMModelFactory.shared.loadContainer(configuration: localConfig)
+                return try await LLMModelFactory.shared.loadContainer(
+                    from: HubClient(),
+                    configuration: localConfig)
             }
         }
         catch {

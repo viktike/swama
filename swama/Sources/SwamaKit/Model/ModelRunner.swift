@@ -285,7 +285,7 @@ private func trimChatMessagesInternal(
             while low <= high {
                 let mid = (low + high) / 2
                 let prefix = Array(tokens.prefix(mid))
-                let decoded = await container.decode(tokens: prefix)
+                let decoded = await container.decode(tokenIds: prefix)
                 workingMessages[index].content = decoded
 
                 let count = try await countTokensForTrim(workingMessages)

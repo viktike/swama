@@ -22,6 +22,8 @@ let package = Package(
         .package(url: "https://github.com/viktike/vmlx-swift-lm.git", branch: "new"),
         .package(url: "https://github.com/osaurus-ai/mlx-swift", branch: "osaurus-0.31.3"),
         .package(url: "https://github.com/viktike/mlx-swift-audio.git", branch: "new"),
+        .package(url: "https://github.com/viktike/swift-tokenizers-mlx/", branch: "new", traits: ["Swift"]),
+        .package(url: "https://github.com/viktike/swift-hf-api-mlx/", branch: "new"),
     ],
     targets: [
         .target(
@@ -33,10 +35,15 @@ let package = Package(
                 .product(name: "MLXVLM", package: "vmlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "vmlx-swift-lm"),
                 .product(name: "MLXEmbedders", package: "vmlx-swift-lm"),
+                .product(name: "MLXHuggingFace", package: "vmlx-swift-lm"),
                 .product(name: "MLXRandom", package: "mlx-swift"),
                 .product(name: "MLXFast", package: "mlx-swift"),
                 .product(name: "MLXAudio", package: "mlx-swift-audio"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "MLXLMTokenizers", package: "swift-tokenizers-mlx"),
+                .product(name: "MLXLMHFAPI", package: "swift-hf-api-mlx"),
+                .product(name: "MLXEmbeddersTokenizers", package: "swift-tokenizers-mlx"),
+                .product(name: "MLXEmbeddersHFAPI", package: "swift-hf-api-mlx"),
             ],
             path: "Sources/SwamaKit",
             resources: []

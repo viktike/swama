@@ -15,7 +15,7 @@ public struct StreamingDetokenizer {
     public mutating func append(token: Int) -> String? {
         buffer.append(token)
 
-        let decoded = tokenizer.decode(tokens: buffer, skipSpecialTokens: false)
+        let decoded = tokenizer.decode(tokenIds: buffer, skipSpecialTokens: false)
 
         // Check if the decoded string has replacement characters (incomplete token)
         if decoded.contains("\u{fffd}") {
@@ -26,7 +26,7 @@ public struct StreamingDetokenizer {
         tokens.append(contentsOf: buffer)
         buffer.removeAll()
 
-        let fullDecoded = tokenizer.decode(tokens: tokens, skipSpecialTokens: true)
+        let fullDecoded = tokenizer.decode(tokenIds: tokens, skipSpecialTokens: true)
         let delta = fullDecoded.dropFirst(lastDecoded.count)
 
         lastDecoded = fullDecoded
