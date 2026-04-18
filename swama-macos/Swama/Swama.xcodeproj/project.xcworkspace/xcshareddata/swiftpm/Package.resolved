@@ -22,10 +22,10 @@
     {
       "identity" : "mlx-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ml-explore/mlx-swift",
+      "location" : "https://github.com/osaurus-ai/mlx-swift",
       "state" : {
-        "branch" : "main",
-        "revision" : "2512c5bebfd801c817b5d07828cbfdc44c76fab4"
+        "branch" : "osaurus-0.31.3",
+        "revision" : "61b9e011e09a62b489f6bd647958f1555bdf2896"
       }
     },
     {
@@ -33,17 +33,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/viktike/mlx-swift-audio.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "6c382d7cf2a18192b28ca692ee26df76fe47878d"
+        "branch" : "new",
+        "revision" : "cb840ef8a4ca8f9c2f2598e6e73f5c35de020870"
       }
     },
     {
-      "identity" : "mlx-swift-lm",
+      "identity" : "vmlx-swift-lm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/viktike/mlx-swift-lm",
+      "location" : "https://github.com/viktike/vmlx-swift-lm",
       "state" : {
-        "branch" : "viktike",
-        "revision" : "26f8ff337c6b5bb45ec119c4928ce963862cc768"
+        "branch" : "new",
+        "revision" : "eba33a468b1e7f08e57caf8c76b9fb546a25d277"
       }
     },
     {
