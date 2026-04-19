@@ -79,30 +79,24 @@ public actor ModelRunner {
         onToolCall: (@Sendable (MLXLMCommon.ToolCall) -> Void)? = nil
     ) async throws -> ChatRunResult {
         try await withError {
-            var output = ""
-            var promptTokens = 0
-            var capturedCompletionInfo: GenerateCompletionInfo?
-            var toolCalls: [MLXLMCommon.ToolCall] = []
-
             let rawOutputStorage = RawOutputBuffer()
             let hasMediaInput = userInput.hasMediaContent
             let configuredContextLimit = await ContextLimitConfig.shared.currentLimit()
             let effectiveContextLimit = hasMediaInput
-                ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
-                : configuredContextLimit
-
+            ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
+            : configuredContextLimit
+            
             if hasMediaInput, effectiveContextLimit < configuredContextLimit {
                 modelRunnerLogger.info(
                     "Multimodal request context limit clamped from \(configuredContextLimit) to \(effectiveContextLimit)"
                 )
             }
-
+            
             var effectiveParameters = parameters
             if effectiveParameters.maxKVSize == nil {
                 effectiveParameters.maxKVSize = effectiveContextLimit
             }
-            let generationParameters = effectiveParameters
-
+            
             var effectiveInput = userInput
             if case let .chat(messages) = userInput.prompt {
                 let trimmedMessages = try await trimChatMessagesInternal(
@@ -120,10 +114,11 @@ public actor ModelRunner {
                     additionalContext: userInput.additionalContext
                 )
             }
-
+            
+            // Prepare once for token count
             let lmInput = try await container.prepare(input: effectiveInput)
+            let promptTokens = tokenLength(lmInput.text.tokens)
 
-            promptTokens = tokenLength(lmInput.text.tokens)
             guard promptTokens <= effectiveContextLimit else {
                 throw ContextLimitError.exceededAfterTrimming(
                     limit: effectiveContextLimit,
@@ -131,38 +126,38 @@ public actor ModelRunner {
                 )
             }
 
-            let generationStream = try await container.perform { context in
-                try generate(
-                    input: lmInput,
-                    parameters: generationParameters,
-                    context: context
-                )
-            }
+            let generationStream = try await container.generate(
+                input: lmInput,                    // or effectiveInput if it accepts UserInput in your version
+                parameters: effectiveParameters
+            )
 
-            if let stats = container.cacheCoordinator?.pagedCache?.stats {
-                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
-            }
-            
+            var output = ""
+            var capturedCompletionInfo: GenerateCompletionInfo? = nil
+            var toolCalls: [MLXLMCommon.ToolCall] = []
+
             for await generationEvent in generationStream {
                 switch generationEvent {
-                case let .chunk(chunkString):
+                case let .chunk(chunkString):      // Some versions use .text instead of .chunk
                     rawOutputStorage.append(chunkString)
-
                     onToken?(chunkString)
-                    // Only accumulate if no onToken callback (for non-streaming)
                     if onToken == nil {
                         output += chunkString
                     }
-
+                    
                 case let .info(info):
                     capturedCompletionInfo = info
-
+                    
                 case let .toolCall(toolCall):
-                    // Always accumulate tool calls for the return value
                     toolCalls.append(toolCall)
-                    // Also send to callback if provided (for streaming)
                     onToolCall?(toolCall)
                 }
+            }
+
+            // Cache stats — print AFTER the loop finishes
+            if let stats = container.cacheCoordinator?.pagedCache?.stats {
+                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), " +
+                      "allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, " +
+                      "free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
             }
 
             let rawOutput = rawOutputStorage.consume()
