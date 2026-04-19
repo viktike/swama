@@ -139,6 +139,10 @@ public actor ModelRunner {
                 )
             }
 
+            if let stats = container.cacheCoordinator?.pagedCache?.stats {
+                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+            }
+            
             for await generationEvent in generationStream {
                 switch generationEvent {
                 case let .chunk(chunkString):

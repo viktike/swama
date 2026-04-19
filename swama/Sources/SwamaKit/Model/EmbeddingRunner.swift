@@ -9,6 +9,10 @@ import MLXEmbeddersTokenizers
 /// Loads an embedding model container for the given model name.
 public func loadEmbeddingModelContainer(modelName: String) async throws -> EmbedderModelContainer {
     do {
+        NSLog(
+            "SwamaKit.ModelPool: loading Embedder %@",
+            modelName
+        )
         let container = try await loadModelContainer(
             from: HubClient.default,
             configuration: ModelConfiguration(id: modelName)

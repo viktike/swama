@@ -356,6 +356,14 @@ public actor ModelPool {
                     isVLM: isVLM
                 )
 
+                // Prefill Cache
+                let config = getPrefillCacheFromModelFiles(modelName: modelName)
+                if (config == nil) {
+                    container.disableCaching()
+                } else {
+                    container.enableCaching(config: config!)
+                }
+
                 cache[modelName] = container
                 modelUsageInfo[modelName] = ModelUsageInfo()
                 return container
@@ -376,6 +384,14 @@ public actor ModelPool {
                 modelName: modelName,
                 isVLM: isVLMModel
             )
+            
+            // Prefill Cache
+            let config = getPrefillCacheFromModelFiles(modelName: modelName)
+            if (config == nil) {
+                container.disableCaching()
+            } else {
+                container.enableCaching(config: config!)
+            }
 
             cache[modelName] = container
             modelUsageInfo[modelName] = ModelUsageInfo()
@@ -590,6 +606,27 @@ public actor ModelPool {
         return tokens
     }
 
+    private func getPrefillCacheFromModelFiles(modelName: String) -> CacheCoordinatorConfig? {
+        let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
+        let configURL = modelDirectory.appendingPathComponent("config.json")
+        let maxCacheBlocks = parseMaxCacheBlocks(from: configURL)
+        if maxCacheBlocks == nil {
+            NSLog("SwamaKit.ModelPool: Prefill cache disabled for model \(modelName)")
+            return nil
+        } else {
+            let pageBlockSize = parsePageBlockSize(from: configURL)
+            let maxSSMEntries = parseMaxSSMEntries(from: configURL)
+            NSLog("SwamaKit.ModelPool: \(modelName) prefill cache \(maxCacheBlocks) blocks, \(maxSSMEntries) SSM entries")
+            return CacheCoordinatorConfig(
+                usePagedCache: true,
+                enableDiskCache: false,
+                pagedBlockSize: pageBlockSize,
+                maxCacheBlocks: maxCacheBlocks!,
+                ssmMaxEntries: maxSSMEntries
+            )
+        }
+    }
+    
     private func detectEOSTokensFromModelFiles(modelName: String) -> Set<String> {
         let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
         let configURL = modelDirectory.appendingPathComponent("config.json")
@@ -688,6 +725,48 @@ public actor ModelPool {
         }
     }
 
+    private func parseMaxCacheBlocks(from url: URL) -> Int? {
+        guard let data = try? Data(contentsOf: url),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+
+        if let maxCacheBlocks = jsonObject["max_cache_blocks"] as? Int {
+            return maxCacheBlocks
+        } else {
+            return nil
+        }
+    }
+    
+    private func parsePageBlockSize(from url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return 64
+        }
+
+        if let pageBlockSize = jsonObject["page_block_size"] as? Int {
+            return pageBlockSize
+        } else {
+            return 64
+        }
+    }
+    
+    private func parseMaxSSMEntries(from url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return 50
+        }
+
+        if let maxSSMEntries = jsonObject["max_ssm_entries"] as? Int {
+            return maxSSMEntries
+        } else {
+            return 50
+        }
+    }
+    
     private func parseEOSTokenIDs(from url: URL) -> Set<Int>? {
         guard let data = try? Data(contentsOf: url),
               let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
