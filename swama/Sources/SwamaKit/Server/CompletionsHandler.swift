@@ -412,6 +412,8 @@ public enum CompletionsHandler {
             return .turboQuant(keyBits: k_bits, valueBits: v_bits)
         } else {
             switch kv_bits {
+                case 0:
+                    return .none
                 case 7:
                     return .turboQuant(keyBits: 8, valueBits: 7)
                 case 6:
@@ -423,11 +425,7 @@ public enum CompletionsHandler {
                 case 3:
                     return .turboQuant(keyBits: 4, valueBits: 3)
                 default:
-                    if kv_bits == 0 {
-                        return .none
-                    } else {
-                        return .affine(bits: kv_bits)
-                    }
+                    return .affine(bits: kv_bits)
             }
         }
     }

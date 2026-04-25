@@ -132,12 +132,19 @@ public actor ModelRunner {
             )
 
             var output = ""
+            var reasoning = ""
             var capturedCompletionInfo: GenerateCompletionInfo? = nil
             var toolCalls: [MLXLMCommon.ToolCall] = []
 
             for await generationEvent in generationStream {
                 switch generationEvent {
-                case let .chunk(chunkString):      // Some versions use .text instead of .chunk
+                case let .reasoning(reasoningString):
+                    rawOutputStorage.append(reasoningString)
+                    onToken?(reasoningString)
+                    if onToken == nil {
+                        reasoning += reasoningString
+                    }
+                case let .chunk(chunkString):
                     rawOutputStorage.append(chunkString)
                     onToken?(chunkString)
                     if onToken == nil {
@@ -158,14 +165,19 @@ public actor ModelRunner {
                 NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), " +
                       "allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, " +
                       "free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+                if container.cacheCoordinator!.config.ssmMaxEntries > 0 {
+                    let ssmStats = container.cacheCoordinator!.ssmStateCache
+                    NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+                }
             }
 
             let rawOutput = rawOutputStorage.consume()
             let resolvedOutput = output.isEmpty ? rawOutput : output
+            let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
 
             return ChatRunResult(
                 output: resolvedOutput,
-                analysis: nil,
+                analysis: reasoning,
                 promptTokens: promptTokens,
                 completionInfo: capturedCompletionInfo,
                 toolCalls: toolCalls,

@@ -345,6 +345,13 @@ public actor ModelPool {
         let task = Task {
             defer { tasks[modelName] = nil }
 
+            var hybrid = false
+            let ssm = getSSM(modelName: modelName)
+            let cacheConfig = getPrefillCacheFromModelFiles(modelName: modelName, ssm: ssm)
+            if ssm != 0 {
+                hybrid = true
+            }
+            
             if let isVLM = modelTypeCache[modelName] {
                 guard ModelPaths.modelExistsLocally(modelName) else {
                     modelTypeCache.removeValue(forKey: modelName)
@@ -357,11 +364,10 @@ public actor ModelPool {
                 )
 
                 // Prefill Cache
-                let config = getPrefillCacheFromModelFiles(modelName: modelName)
-                if (config == nil) {
+                if (cacheConfig == nil) {
                     container.disableCaching()
                 } else {
-                    container.enableCaching(config: config!)
+                    container.enableCaching(config: cacheConfig!, hybrid: hybrid)
                 }
 
                 cache[modelName] = container
@@ -386,11 +392,10 @@ public actor ModelPool {
             )
             
             // Prefill Cache
-            let config = getPrefillCacheFromModelFiles(modelName: modelName)
-            if (config == nil) {
+            if (cacheConfig == nil) {
                 container.disableCaching()
             } else {
-                container.enableCaching(config: config!)
+                container.enableCaching(config: cacheConfig!, hybrid: hybrid)
             }
 
             cache[modelName] = container
@@ -553,7 +558,8 @@ public actor ModelPool {
 
         let localConfig = MLXLMCommon.ModelConfiguration(
             directory: ModelPaths.getModelDirectory(for: modelName),
-            extraEOSTokens: extraEOSTokens
+            extraEOSTokens: extraEOSTokens,
+            reasoningParserName: "none"
         )
 
         do {
@@ -606,7 +612,13 @@ public actor ModelPool {
         return tokens
     }
 
-    private func getPrefillCacheFromModelFiles(modelName: String) -> CacheCoordinatorConfig? {
+    private func getSSM(modelName: String) -> Int {
+        let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
+        let configURL = modelDirectory.appendingPathComponent("config.json")
+        return parseMaxSSMEntries(from: configURL)
+    }
+    
+    private func getPrefillCacheFromModelFiles(modelName: String, ssm: Int = 0) -> CacheCoordinatorConfig? {
         let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
         let configURL = modelDirectory.appendingPathComponent("config.json")
         let maxCacheBlocks = parseMaxCacheBlocks(from: configURL)
@@ -615,14 +627,15 @@ public actor ModelPool {
             return nil
         } else {
             let pageBlockSize = parsePageBlockSize(from: configURL)
-            let maxSSMEntries = parseMaxSSMEntries(from: configURL)
-            NSLog("SwamaKit.ModelPool: \(modelName) prefill cache \(maxCacheBlocks) blocks, \(maxSSMEntries) SSM entries")
+            NSLog("SwamaKit.ModelPool: \(modelName) prefill cache \(maxCacheBlocks) blocks, \(ssm) SSM entries")
             return CacheCoordinatorConfig(
                 usePagedCache: true,
                 enableDiskCache: false,
                 pagedBlockSize: pageBlockSize,
                 maxCacheBlocks: maxCacheBlocks!,
-                ssmMaxEntries: maxSSMEntries
+                ssmMaxEntries: ssm
+//                modelKey: modelName,
+//                defaultKVMode: .none
             )
         }
     }
@@ -757,13 +770,13 @@ public actor ModelPool {
         guard let data = try? Data(contentsOf: url),
             let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return 50
+            return 0
         }
 
         if let maxSSMEntries = jsonObject["max_ssm_entries"] as? Int {
             return maxSSMEntries
         } else {
-            return 50
+            return 0
         }
     }
     
