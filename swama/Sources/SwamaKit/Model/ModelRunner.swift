@@ -162,12 +162,10 @@ public actor ModelRunner {
 
             // Cache stats — print AFTER the loop finishes
             if let stats = container.cacheCoordinator?.pagedCache?.stats {
-                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), " +
-                      "allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, " +
-                      "free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+                modelRunnerLogger.info("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
                 if container.cacheCoordinator!.config.ssmMaxEntries > 0 {
                     let ssmStats = container.cacheCoordinator!.ssmStateCache
-                    NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+                    modelRunnerLogger.info("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
                 }
             }
 
