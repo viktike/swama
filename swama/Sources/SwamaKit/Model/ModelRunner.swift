@@ -177,7 +177,7 @@ public actor ModelRunner {
 
             return ChatRunResult(
                 output: resolvedOutput,
-                analysis: reasoning,
+                analysis: resolvedAnalysis,
                 promptTokens: promptTokens,
                 completionInfo: capturedCompletionInfo,
                 toolCalls: toolCalls,

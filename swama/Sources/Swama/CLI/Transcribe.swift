@@ -153,7 +153,7 @@ struct Transcribe: AsyncParsableCommand {
 
                 for (index, transcriptionResult) in results.enumerated() {
                     print("\n--- Result \(index + 1) ---")
-                    print("Language: \(transcriptionResult.language ?? "unknown")")
+                    print("Language: \(transcriptionResult.language)")
 
                     for segment in transcriptionResult.segments {
                         let startTime = formatTime(segment.start)

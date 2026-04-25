@@ -622,7 +622,7 @@ public actor ModelPool {
         let modelDirectory = ModelPaths.getModelDirectory(for: modelName)
         let configURL = modelDirectory.appendingPathComponent("config.json")
         let maxCacheBlocks = parseMaxCacheBlocks(from: configURL)
-        if maxCacheBlocks == nil {
+        if maxCacheBlocks == 0 {
             NSLog("SwamaKit.ModelPool: Prefill cache disabled for model \(modelName)")
             return nil
         } else {
@@ -632,7 +632,7 @@ public actor ModelPool {
                 usePagedCache: true,
                 enableDiskCache: false,
                 pagedBlockSize: pageBlockSize,
-                maxCacheBlocks: maxCacheBlocks!,
+                maxCacheBlocks: maxCacheBlocks,
                 ssmMaxEntries: ssm
 //                modelKey: modelName,
 //                defaultKVMode: .none
@@ -738,17 +738,17 @@ public actor ModelPool {
         }
     }
 
-    private func parseMaxCacheBlocks(from url: URL) -> Int? {
+    private func parseMaxCacheBlocks(from url: URL) -> Int {
         guard let data = try? Data(contentsOf: url),
             let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return nil
+            return 0
         }
 
         if let maxCacheBlocks = jsonObject["max_cache_blocks"] as? Int {
             return maxCacheBlocks
         } else {
-            return nil
+            return 0
         }
     }
     
