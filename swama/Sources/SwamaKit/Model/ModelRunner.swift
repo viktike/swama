@@ -118,7 +118,6 @@ public actor ModelRunner {
         let finalParameters = effectiveParameters
         
         if let coordinator = container.cacheCoordinator {
-            NSLog("CacheCoordinator enabled")
             return try await container.perform { context in
                 // Process input
                 let lmInput = try await context.processor.prepare(input: finalInput)
@@ -135,76 +134,9 @@ public actor ModelRunner {
                 // Create cache
                 var cache: [any KVCache] = context.model.newCache(parameters: finalParameters)
                 
-                // Check multi-tier cache for a prefix match before running full prefill
-                var inputForPrepare = lmInput
-                let tokenIds = lmInput.text.tokens.asArray(Int.self)
-                let result = coordinator.fetch(tokens: tokenIds, mediaSalt: nil)
-                if case .hit(_, let remaining, let detail, let blocks, let ssmStates, let diskArrays) = result {
-                    var restored = false
-                    if !blocks.isEmpty {
-                        let restoredTokens = restoreLayerData(from: blocks, into: cache)
-                        if restoredTokens > 0 {
-                            if let ssm = ssmStates {
-                                restoreSSMStates(ssm, into: cache)
-                                NSLog(
-                                    "\(detail.rawValue) cache hit: restored \(restoredTokens) tokens, prefilling \(remaining.count) remaining (restored \(ssm.count) SSM states)"
-                                )
-                            } else {
-                                NSLog(
-                                    "\(detail.rawValue) cache hit: restored \(restoredTokens) tokens, prefilling \(remaining.count) remaining (no SSM states found)"
-                                )
-                            }
-                            restored = true
-                        }
-                    }
-                    
-                    // Disk cache restore (blocks are empty, arrays are present)
-                    if let diskArrays, !restored {
-                        let diskRestored = restoreFromDiskArrays(diskArrays, into: cache)
-                        if diskRestored > 0 {
-                            if let ssm = ssmStates {
-                                restoreSSMStates(ssm, into: cache)
-                                NSLog(
-                                    "\(detail.rawValue) cache hit: restored \(diskRestored) tokens from disk, prefilling \(remaining.count) remaining (restored \(ssm.count) SSM states)"
-                                )
-                            } else {
-                                NSLog(
-                                    "\(detail.rawValue) cache hit: restored \(diskRestored) tokens from disk, prefilling \(remaining.count) remaining (no SSM states found)"
-                                )
-                            }
-                            restored = true
-                        }
-                    }
-                    
-                    if restored, !remaining.isEmpty {
-                        // Create new input with only remaining tokens
-                        inputForPrepare = LMInput(
-                            text: .init(tokens: MLXArray(remaining)),
-                            image: lmInput.image,
-                            video: lmInput.video
-                        )
-                    }
-                }
-                
                 // Prefill
-                let remaining = try context.model.prepare(inputForPrepare, cache: cache, windowSize: nil)
-                
-                // Save SSM state
-                if coordinator.isHybrid {
-                    let ssmStates = extractSSMStates(from: cache)
-                    if !ssmStates.isEmpty {
-                        let promptTokenList = lmInput.text.tokens.asArray(Int.self)
-                        coordinator.ssmStateCache.store(
-                            ssmStates: ssmStates,
-                            tokens: promptTokenList,
-                            boundary: promptTokenList.count
-                        )
-                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens (\(ssmStates.count) states)")
-                    } else {
-                        NSLog("SSM Debug: no SSM states extracted from cache")
-                    }
-                }
-                
+                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: nil)
+                                
                 // Submit input for generation
                 let generationStream = try generate (
                     input: lmInput,
@@ -253,6 +185,22 @@ public actor ModelRunner {
                     }
                 }
                 
+                // Save SSM state
+                if coordinator.isHybrid {
+                    let ssmStates = extractSSMStates(from: cache)
+                    if !ssmStates.isEmpty {
+                        let promptTokenList = lmInput.text.tokens.asArray(Int.self)
+                        coordinator.ssmStateCache.store(
+                            ssmStates: ssmStates,
+                            tokens: promptTokenList,
+                            boundary: promptTokenList.count
+                        )
+                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens (\(ssmStates.count) states)")
+                    } else {
+                        NSLog("SSM Debug: no SSM states extracted from cache")
+                    }
+                }
+                
                 // Structure the output
                 let rawOutput = rawOutputStorage.consume()
                 let resolvedOutput = output.isEmpty ? rawOutput : output
@@ -268,7 +216,6 @@ public actor ModelRunner {
                 )
             }
         } else {
-            NSLog("CacheCoordinator disabled")
             // Prepare once for token count
             let lmInput = try await container.prepare(input: finalInput)
             let promptTokens = tokenLength(lmInput.text.tokens)
