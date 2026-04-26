@@ -78,110 +78,142 @@ public actor ModelRunner {
         onToken: (@Sendable (String) -> Void)? = nil,
         onToolCall: (@Sendable (MLXLMCommon.ToolCall) -> Void)? = nil
     ) async throws -> ChatRunResult {
-        try await withError {
-            let rawOutputStorage = RawOutputBuffer()
-            let hasMediaInput = userInput.hasMediaContent
-            let configuredContextLimit = await ContextLimitConfig.shared.currentLimit()
-            let effectiveContextLimit = hasMediaInput
-            ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
-            : configuredContextLimit
-            
-            if hasMediaInput, effectiveContextLimit < configuredContextLimit {
-                modelRunnerLogger.info(
-                    "Multimodal request context limit clamped from \(configuredContextLimit) to \(effectiveContextLimit)"
-                )
-            }
-            
-            var effectiveParameters = parameters
-            if effectiveParameters.maxKVSize == nil {
-                effectiveParameters.maxKVSize = effectiveContextLimit
-            }
-            
-            var effectiveInput = userInput
-            if case let .chat(messages) = userInput.prompt {
-                let trimmedMessages = try await trimChatMessagesInternal(
-                    chatMessages: messages,
-                    tools: userInput.tools,
-                    limit: effectiveContextLimit,
-                    container: container,
-                    processing: userInput.processing,
-                    additionalContext: userInput.additionalContext
-                )
-                effectiveInput = MLXLMCommon.UserInput(
-                    chat: trimmedMessages,
-                    processing: userInput.processing,
-                    tools: userInput.tools,
-                    additionalContext: userInput.additionalContext
-                )
-            }
-            
-            // Prepare once for token count
-            let lmInput = try await container.prepare(input: effectiveInput)
-            let promptTokens = tokenLength(lmInput.text.tokens)
-
-            guard promptTokens <= effectiveContextLimit else {
-                throw ContextLimitError.exceededAfterTrimming(
-                    limit: effectiveContextLimit,
-                    promptTokens: promptTokens
-                )
-            }
-
-            let generationStream = try await container.generate(
-                input: lmInput,                    // or effectiveInput if it accepts UserInput in your version
-                parameters: effectiveParameters
-            )
-
-            var output = ""
-            var reasoning = ""
-            var capturedCompletionInfo: GenerateCompletionInfo? = nil
-            var toolCalls: [MLXLMCommon.ToolCall] = []
-
-            for await generationEvent in generationStream {
-                switch generationEvent {
-                case let .reasoning(reasoningString):
-                    rawOutputStorage.append(reasoningString)
-                    onToken?(reasoningString)
-                    if onToken == nil {
-                        reasoning += reasoningString
-                    }
-                case let .chunk(chunkString):
-                    rawOutputStorage.append(chunkString)
-                    onToken?(chunkString)
-                    if onToken == nil {
-                        output += chunkString
-                    }
-                    
-                case let .info(info):
-                    capturedCompletionInfo = info
-                    
-                case let .toolCall(toolCall):
-                    toolCalls.append(toolCall)
-                    onToolCall?(toolCall)
-                }
-            }
-
-            // Cache stats — print AFTER the loop finishes
-            if let stats = container.cacheCoordinator?.pagedCache?.stats {
-                modelRunnerLogger.info("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
-                if container.cacheCoordinator!.config.ssmMaxEntries > 0 {
-                    let ssmStats = container.cacheCoordinator!.ssmStateCache
-                    modelRunnerLogger.info("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
-                }
-            }
-
-            let rawOutput = rawOutputStorage.consume()
-            let resolvedOutput = output.isEmpty ? rawOutput : output
-            let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
-
-            return ChatRunResult(
-                output: resolvedOutput,
-                analysis: resolvedAnalysis,
-                promptTokens: promptTokens,
-                completionInfo: capturedCompletionInfo,
-                toolCalls: toolCalls,
-                rawText: rawOutput
+        let rawOutputStorage = RawOutputBuffer()
+        let hasMediaInput = userInput.hasMediaContent
+        let configuredContextLimit = await ContextLimitConfig.shared.currentLimit()
+        let effectiveContextLimit = hasMediaInput
+        ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
+        : configuredContextLimit
+        
+        if hasMediaInput, effectiveContextLimit < configuredContextLimit {
+            modelRunnerLogger.info(
+                "Multimodal request context limit clamped from \(configuredContextLimit) to \(effectiveContextLimit)"
             )
         }
+        
+        var effectiveParameters = parameters
+        if effectiveParameters.maxKVSize == nil {
+            effectiveParameters.maxKVSize = effectiveContextLimit
+        }
+        
+        var effectiveInput = userInput
+        if case let .chat(messages) = userInput.prompt {
+            let trimmedMessages = try await trimChatMessagesInternal(
+                chatMessages: messages,
+                tools: userInput.tools,
+                limit: effectiveContextLimit,
+                container: container,
+                processing: userInput.processing,
+                additionalContext: userInput.additionalContext
+            )
+            effectiveInput = MLXLMCommon.UserInput(
+                chat: trimmedMessages,
+                processing: userInput.processing,
+                tools: userInput.tools,
+                additionalContext: userInput.additionalContext
+            )
+        }
+        
+        let finalInput = effectiveInput
+        let finalParameters = effectiveParameters
+        
+        return try await container.perform { context in
+                // Process input
+                let lmInput = try await context.processor.prepare(input: finalInput)
+                let promptTokens = tokenLength(lmInput.text.tokens)
+                
+                // Check effective context limit
+                guard promptTokens <= effectiveContextLimit else {
+                    throw ContextLimitError.exceededAfterTrimming(
+                        limit: effectiveContextLimit,
+                        promptTokens: promptTokens
+                    )
+                }
+                
+                // Create cache
+                var cache: [any KVCache] = context.model.newCache(parameters: finalParameters)
+
+                // Prefill
+                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: nil)
+                
+                // Save SSM state
+                if let coordinator = container.cacheCoordinator, coordinator.isHybrid {
+                    let ssmStates = extractSSMStates(from: cache)
+                    if !ssmStates.isEmpty {
+                        let promptTokenList = lmInput.text.tokens.asArray(Int.self)
+                        coordinator.ssmStateCache.store(
+                            ssmStates: ssmStates,
+                            tokens: promptTokenList,
+                            boundary: promptTokenList.count
+                        )
+                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens")
+                    }
+                }
+            
+                // Submit input for generation
+                let generationStream = try generate (
+                    input: lmInput,
+                    cache: cache,
+                    parameters: finalParameters,
+                    context: context,
+                    cacheCoordinator: container.cacheCoordinator ?? nil
+                )
+                
+                // Gather the generated tokens
+                var output = ""
+                var reasoning = ""
+                var capturedCompletionInfo: GenerateCompletionInfo? = nil
+                var toolCalls: [MLXLMCommon.ToolCall] = []
+                
+                for await generationEvent in generationStream {
+                    switch generationEvent {
+                    case let .reasoning(reasoningString):
+                        rawOutputStorage.append(reasoningString)
+                        onToken?(reasoningString)
+                        if onToken == nil {
+                            reasoning += reasoningString
+                        }
+                    case let .chunk(chunkString):
+                        rawOutputStorage.append(chunkString)
+                        onToken?(chunkString)
+                        if onToken == nil {
+                            output += chunkString
+                        }
+                        
+                    case let .info(info):
+                        capturedCompletionInfo = info
+                        
+                    case let .toolCall(toolCall):
+                        toolCalls.append(toolCall)
+                        onToolCall?(toolCall)
+                    }
+                }
+                
+                // Log cache hit stats
+                if let coordinator = container.cacheCoordinator {
+                    if let stats = coordinator.pagedCache?.stats {
+                        NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+                        if coordinator.config.ssmMaxEntries > 0 {
+                            let ssmStats = coordinator.ssmStateCache
+                            NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+                        }
+                    }
+                }
+                
+                // Structure the output
+                let rawOutput = rawOutputStorage.consume()
+                let resolvedOutput = output.isEmpty ? rawOutput : output
+                let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
+                
+                return ChatRunResult(
+                    output: resolvedOutput,
+                    analysis: resolvedAnalysis,
+                    promptTokens: promptTokens,
+                    completionInfo: capturedCompletionInfo,
+                    toolCalls: toolCalls,
+                    rawText: rawOutput
+                )
+            }
     }
 
     // MARK: - Existing methods
