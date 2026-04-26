@@ -114,150 +114,74 @@ public actor ModelRunner {
             )
         }
         
-        let finalInput = effectiveInput
-        let finalParameters = effectiveParameters
-        
-        if let coordinator = container.cacheCoordinator {
-            return try await container.perform { context in
-                // Process input
-                let lmInput = try await context.processor.prepare(input: finalInput)
-                let promptTokenCount = tokenLength(lmInput.text.tokens)
-                
-                // Check effective context limit
-                guard promptTokenCount <= effectiveContextLimit else {
-                    throw ContextLimitError.exceededAfterTrimming(
-                        limit: effectiveContextLimit,
-                        promptTokens: promptTokenCount
-                    )
-                }
-                
-                // Create cache
-                var cache: [any KVCache] = context.model.newCache(parameters: finalParameters)
-                
-                // Prefill
-                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: finalParameters.prefillStepSize)
-                                
-                // Submit input for generation
-                let generationStream = try generate (
-                    input: lmInput,
-                    cache: cache,
-                    parameters: finalParameters,
-                    context: context,
-                    cacheCoordinator: coordinator
-                )
-                
-                // Gather the generated tokens
-                var output = ""
-                var reasoning = ""
-                var capturedCompletionInfo: GenerateCompletionInfo? = nil
-                var toolCalls: [MLXLMCommon.ToolCall] = []
-                
-                for await generationEvent in generationStream {
-                    switch generationEvent {
-                    case let .reasoning(reasoningString):
-                        rawOutputStorage.append(reasoningString)
-                        onToken?(reasoningString)
-                        if onToken == nil {
-                            reasoning += reasoningString
-                        }
-                    case let .chunk(chunkString):
-                        rawOutputStorage.append(chunkString)
-                        onToken?(chunkString)
-                        if onToken == nil {
-                            output += chunkString
-                        }
-                        
-                    case let .info(info):
-                        capturedCompletionInfo = info
-                        
-                    case let .toolCall(toolCall):
-                        toolCalls.append(toolCall)
-                        onToolCall?(toolCall)
-                    }
-                }
-                
-                // Log cache hit stats
-                if let stats = coordinator.pagedCache?.stats {
-                    NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
-                    if coordinator.isHybrid {
-                        let ssmStats = coordinator.ssmStateCache
-                        NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
-                    }
-                }
-                
-                // Structure the output
-                let rawOutput = rawOutputStorage.consume()
-                let resolvedOutput = output.isEmpty ? rawOutput : output
-                let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
-                
-                return ChatRunResult(
-                    output: resolvedOutput,
-                    analysis: resolvedAnalysis,
-                    promptTokens: promptTokenCount,
-                    completionInfo: capturedCompletionInfo,
-                    toolCalls: toolCalls,
-                    rawText: rawOutput
-                )
-            }
-        } else {
-            // Prepare once for token count
-            let lmInput = try await container.prepare(input: finalInput)
-            let promptTokens = tokenLength(lmInput.text.tokens)
+        // Prepare once for token count
+        let lmInput = try await container.prepare(input: effectiveInput)
+        let promptTokens = tokenLength(lmInput.text.tokens)
 
-            guard promptTokens <= effectiveContextLimit else {
-                throw ContextLimitError.exceededAfterTrimming(
-                    limit: effectiveContextLimit,
-                    promptTokens: promptTokens
-                )
-            }
-
-            let generationStream = try await container.generate(
-                input: lmInput,
-                parameters: finalParameters
-            )
-
-            var output = ""
-            var reasoning = ""
-            var capturedCompletionInfo: GenerateCompletionInfo? = nil
-            var toolCalls: [MLXLMCommon.ToolCall] = []
-
-            for await generationEvent in generationStream {
-                switch generationEvent {
-                case let .reasoning(reasoningString):
-                    rawOutputStorage.append(reasoningString)
-                    onToken?(reasoningString)
-                    if onToken == nil {
-                        reasoning += reasoningString
-                    }
-                case let .chunk(chunkString):
-                    rawOutputStorage.append(chunkString)
-                    onToken?(chunkString)
-                    if onToken == nil {
-                        output += chunkString
-                    }
-                    
-                case let .info(info):
-                    capturedCompletionInfo = info
-                    
-                case let .toolCall(toolCall):
-                    toolCalls.append(toolCall)
-                    onToolCall?(toolCall)
-                }
-            }
-
-            let rawOutput = rawOutputStorage.consume()
-            let resolvedOutput = output.isEmpty ? rawOutput : output
-            let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
-
-            return ChatRunResult(
-                output: resolvedOutput,
-                analysis: resolvedAnalysis,
-                promptTokens: promptTokens,
-                completionInfo: capturedCompletionInfo,
-                toolCalls: toolCalls,
-                rawText: rawOutput
+        guard promptTokens <= effectiveContextLimit else {
+            throw ContextLimitError.exceededAfterTrimming(
+                limit: effectiveContextLimit,
+                promptTokens: promptTokens
             )
         }
+
+        let generationStream = try await container.generate(
+            input: lmInput,
+            parameters: effectiveParameters
+        )
+
+        var output = ""
+        var reasoning = ""
+        var capturedCompletionInfo: GenerateCompletionInfo? = nil
+        var toolCalls: [MLXLMCommon.ToolCall] = []
+
+        for await generationEvent in generationStream {
+            switch generationEvent {
+            case let .reasoning(reasoningString):
+                rawOutputStorage.append(reasoningString)
+                onToken?(reasoningString)
+                if onToken == nil {
+                    reasoning += reasoningString
+                }
+            case let .chunk(chunkString):
+                rawOutputStorage.append(chunkString)
+                onToken?(chunkString)
+                if onToken == nil {
+                    output += chunkString
+                }
+                
+            case let .info(info):
+                capturedCompletionInfo = info
+                
+            case let .toolCall(toolCall):
+                toolCalls.append(toolCall)
+                onToolCall?(toolCall)
+            }
+        }
+
+        // Log cache hit stats
+        if let coordinator = container.cacheCoordinator {
+            if let stats = coordinator.pagedCache?.stats {
+                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+            }
+            if coordinator.isHybrid {
+                let ssmStats = coordinator.ssmStateCache
+                NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+            }
+        }
+        
+        let rawOutput = rawOutputStorage.consume()
+        let resolvedOutput = output.isEmpty ? rawOutput : output
+        let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
+
+        return ChatRunResult(
+            output: resolvedOutput,
+            analysis: resolvedAnalysis,
+            promptTokens: promptTokens,
+            completionInfo: capturedCompletionInfo,
+            toolCalls: toolCalls,
+            rawText: rawOutput
+        )
     }
 
     // MARK: - Existing methods
