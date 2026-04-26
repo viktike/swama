@@ -117,7 +117,9 @@ public actor ModelRunner {
         let finalInput = effectiveInput
         let finalParameters = effectiveParameters
         
-        return try await container.perform { context in
+        if let coordinator = container.cacheCoordinator {
+            NSLog("CacheCoordinator enabled")
+            return try await container.perform { context in
                 // Process input
                 let lmInput = try await context.processor.prepare(input: finalInput)
                 let promptTokens = tokenLength(lmInput.text.tokens)
@@ -132,12 +134,63 @@ public actor ModelRunner {
                 
                 // Create cache
                 var cache: [any KVCache] = context.model.newCache(parameters: finalParameters)
-
+                
+                // Check multi-tier cache for a prefix match before running full prefill
+                var inputForPrepare = lmInput
+                let tokenIds = lmInput.text.tokens.asArray(Int.self)
+                let result = coordinator.fetch(tokens: tokenIds, mediaSalt: nil)
+                if case .hit(_, let remaining, let detail, let blocks, let ssmStates, let diskArrays) = result {
+                    var restored = false
+                    if !blocks.isEmpty {
+                        let restoredTokens = restoreLayerData(from: blocks, into: cache)
+                        if restoredTokens > 0 {
+                            if let ssm = ssmStates {
+                                restoreSSMStates(ssm, into: cache)
+                                NSLog(
+                                    "\(detail.rawValue) cache hit: restored \(restoredTokens) tokens, prefilling \(remaining.count) remaining (restored \(ssm.count) SSM states)"
+                                )
+                            } else {
+                                NSLog(
+                                    "\(detail.rawValue) cache hit: restored \(restoredTokens) tokens, prefilling \(remaining.count) remaining (no SSM states found)"
+                                )
+                            }
+                            restored = true
+                        }
+                    }
+                    
+                    // Disk cache restore (blocks are empty, arrays are present)
+                    if let diskArrays, !restored {
+                        let diskRestored = restoreFromDiskArrays(diskArrays, into: cache)
+                        if diskRestored > 0 {
+                            if let ssm = ssmStates {
+                                restoreSSMStates(ssm, into: cache)
+                                NSLog(
+                                    "\(detail.rawValue) cache hit: restored \(diskRestored) tokens from disk, prefilling \(remaining.count) remaining (restored \(ssm.count) SSM states)"
+                                )
+                            } else {
+                                NSLog(
+                                    "\(detail.rawValue) cache hit: restored \(diskRestored) tokens from disk, prefilling \(remaining.count) remaining (no SSM states found)"
+                                )
+                            }
+                            restored = true
+                        }
+                    }
+                    
+                    if restored, !remaining.isEmpty {
+                        // Create new input with only remaining tokens
+                        inputForPrepare = LMInput(
+                            text: .init(tokens: MLXArray(remaining)),
+                            image: lmInput.image,
+                            video: lmInput.video
+                        )
+                    }
+                }
+                
                 // Prefill
-                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: nil)
+                let remaining = try context.model.prepare(inputForPrepare, cache: cache, windowSize: nil)
                 
                 // Save SSM state
-                if let coordinator = container.cacheCoordinator, coordinator.isHybrid {
+                if coordinator.isHybrid {
                     let ssmStates = extractSSMStates(from: cache)
                     if !ssmStates.isEmpty {
                         let promptTokenList = lmInput.text.tokens.asArray(Int.self)
@@ -146,17 +199,19 @@ public actor ModelRunner {
                             tokens: promptTokenList,
                             boundary: promptTokenList.count
                         )
-                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens")
+                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens (\(ssmStates.count) states)")
+                    } else {
+                        NSLog("SSM Debug: no SSM states extracted from cache")
                     }
                 }
-            
+                
                 // Submit input for generation
                 let generationStream = try generate (
                     input: lmInput,
                     cache: cache,
                     parameters: finalParameters,
                     context: context,
-                    cacheCoordinator: container.cacheCoordinator ?? nil
+                    cacheCoordinator: coordinator
                 )
                 
                 // Gather the generated tokens
@@ -190,13 +245,11 @@ public actor ModelRunner {
                 }
                 
                 // Log cache hit stats
-                if let coordinator = container.cacheCoordinator {
-                    if let stats = coordinator.pagedCache?.stats {
-                        NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
-                        if coordinator.config.ssmMaxEntries > 0 {
-                            let ssmStats = coordinator.ssmStateCache
-                            NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
-                        }
+                if let stats = coordinator.pagedCache?.stats {
+                    NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+                    if coordinator.isHybrid == true {
+                        let ssmStats = coordinator.ssmStateCache
+                        NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
                     }
                 }
                 
@@ -214,6 +267,66 @@ public actor ModelRunner {
                     rawText: rawOutput
                 )
             }
+        } else {
+            NSLog("CacheCoordinator disabled")
+            // Prepare once for token count
+            let lmInput = try await container.prepare(input: finalInput)
+            let promptTokens = tokenLength(lmInput.text.tokens)
+
+            guard promptTokens <= effectiveContextLimit else {
+                throw ContextLimitError.exceededAfterTrimming(
+                    limit: effectiveContextLimit,
+                    promptTokens: promptTokens
+                )
+            }
+
+            let generationStream = try await container.generate(
+                input: lmInput,
+                parameters: finalParameters
+            )
+
+            var output = ""
+            var reasoning = ""
+            var capturedCompletionInfo: GenerateCompletionInfo? = nil
+            var toolCalls: [MLXLMCommon.ToolCall] = []
+
+            for await generationEvent in generationStream {
+                switch generationEvent {
+                case let .reasoning(reasoningString):
+                    rawOutputStorage.append(reasoningString)
+                    onToken?(reasoningString)
+                    if onToken == nil {
+                        reasoning += reasoningString
+                    }
+                case let .chunk(chunkString):
+                    rawOutputStorage.append(chunkString)
+                    onToken?(chunkString)
+                    if onToken == nil {
+                        output += chunkString
+                    }
+                    
+                case let .info(info):
+                    capturedCompletionInfo = info
+                    
+                case let .toolCall(toolCall):
+                    toolCalls.append(toolCall)
+                    onToolCall?(toolCall)
+                }
+            }
+
+            let rawOutput = rawOutputStorage.consume()
+            let resolvedOutput = output.isEmpty ? rawOutput : output
+            let resolvedAnalysis = reasoning.isEmpty ? nil : reasoning
+
+            return ChatRunResult(
+                output: resolvedOutput,
+                analysis: resolvedAnalysis,
+                promptTokens: promptTokens,
+                completionInfo: capturedCompletionInfo,
+                toolCalls: toolCalls,
+                rawText: rawOutput
+            )
+        }
     }
 
     // MARK: - Existing methods

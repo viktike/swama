@@ -633,9 +633,9 @@ public actor ModelPool {
                 enableDiskCache: false,
                 pagedBlockSize: pageBlockSize,
                 maxCacheBlocks: maxCacheBlocks,
-                ssmMaxEntries: ssm
-//                modelKey: modelName,
-//                defaultKVMode: .none
+                ssmMaxEntries: ssm,
+                modelKey: modelName,
+                defaultKVMode: .none
             )
         }
     }
