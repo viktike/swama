@@ -162,11 +162,11 @@ public actor ModelRunner {
         // Log cache hit stats
         if let coordinator = container.cacheCoordinator {
             if let stats = coordinator.pagedCache?.stats {
-                NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
+                modelRunnerLogger.info("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
             }
             if coordinator.isHybrid {
                 let ssmStats = coordinator.ssmStateCache
-                NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+                modelRunnerLogger.debug("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
             }
         }
         
