@@ -121,13 +121,13 @@ public actor ModelRunner {
             return try await container.perform { context in
                 // Process input
                 let lmInput = try await context.processor.prepare(input: finalInput)
-                let promptTokens = tokenLength(lmInput.text.tokens)
+                let promptTokenCount = tokenLength(lmInput.text.tokens)
                 
                 // Check effective context limit
-                guard promptTokens <= effectiveContextLimit else {
+                guard promptTokenCount <= effectiveContextLimit else {
                     throw ContextLimitError.exceededAfterTrimming(
                         limit: effectiveContextLimit,
-                        promptTokens: promptTokens
+                        promptTokens: promptTokenCount
                     )
                 }
                 
@@ -135,7 +135,7 @@ public actor ModelRunner {
                 var cache: [any KVCache] = context.model.newCache(parameters: finalParameters)
                 
                 // Prefill
-                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: nil)
+                let remaining = try context.model.prepare(lmInput, cache: cache, windowSize: finalParameters.prefillStepSize)
                                 
                 // Submit input for generation
                 let generationStream = try generate (
@@ -179,25 +179,9 @@ public actor ModelRunner {
                 // Log cache hit stats
                 if let stats = coordinator.pagedCache?.stats {
                     NSLog("Prefill cache hits: \(stats.cacheHits), misses: \(stats.cacheMisses), allocations: \(stats.allocatedBlocks) / \(stats.totalBlocks) blocks, free: \(stats.freeBlocks) blocks, evicted: \(stats.evictions)")
-                    if coordinator.isHybrid == true {
+                    if coordinator.isHybrid {
                         let ssmStats = coordinator.ssmStateCache
                         NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
-                    }
-                }
-                
-                // Save SSM state
-                if coordinator.isHybrid {
-                    let ssmStates = extractSSMStates(from: cache)
-                    if !ssmStates.isEmpty {
-                        let promptTokenList = lmInput.text.tokens.asArray(Int.self)
-                        coordinator.ssmStateCache.store(
-                            ssmStates: ssmStates,
-                            tokens: promptTokenList,
-                            boundary: promptTokenList.count
-                        )
-                        NSLog("Captured SSM seed at prefill boundary: \(promptTokenList.count) tokens (\(ssmStates.count) states)")
-                    } else {
-                        NSLog("SSM Debug: no SSM states extracted from cache")
                     }
                 }
                 
@@ -209,7 +193,7 @@ public actor ModelRunner {
                 return ChatRunResult(
                     output: resolvedOutput,
                     analysis: resolvedAnalysis,
-                    promptTokens: promptTokens,
+                    promptTokens: promptTokenCount,
                     completionInfo: capturedCompletionInfo,
                     toolCalls: toolCalls,
                     rawText: rawOutput
