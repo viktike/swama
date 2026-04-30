@@ -13,12 +13,6 @@ import struct Tokenizers.ToolSpec
 /// An actor responsible for running model inference.
 private let modelRunnerLogger: Logger = .init(subsystem: "SwamaKit", category: "ModelRunner")
 
-// MARK: - InferenceSafetyLimits
-
-private enum InferenceSafetyLimits {
-    static let multimodalContextLimit = 131072
-}
-
 // MARK: - ModelRunner
 
 public actor ModelRunner {
@@ -79,23 +73,7 @@ public actor ModelRunner {
         onToolCall: (@Sendable (MLXLMCommon.ToolCall) -> Void)? = nil
     ) async throws -> ChatRunResult {
         let rawOutputStorage = RawOutputBuffer()
-        let hasMediaInput = userInput.hasMediaContent
-        let configuredContextLimit = await ContextLimitConfig.shared.currentLimit()
-        let effectiveContextLimit = hasMediaInput
-        ? min(configuredContextLimit, InferenceSafetyLimits.multimodalContextLimit)
-        : configuredContextLimit
-        
-        if hasMediaInput, effectiveContextLimit < configuredContextLimit {
-            modelRunnerLogger.info(
-                "Multimodal request context limit clamped from \(configuredContextLimit) to \(effectiveContextLimit)"
-            )
-        }
-        
-        var effectiveParameters = parameters
-        if effectiveParameters.maxKVSize == nil {
-            effectiveParameters.maxKVSize = effectiveContextLimit
-        }
-        
+        let effectiveContextLimit = await ContextLimitConfig.shared.currentLimit()
         var effectiveInput = userInput
         if case let .chat(messages) = userInput.prompt {
             let trimmedMessages = try await trimChatMessagesInternal(
@@ -114,6 +92,8 @@ public actor ModelRunner {
             )
         }
         
+        NSLog("[Quantization] Final: \(parameters.kvMode)")
+        
         // Prepare once for token count
         let lmInput = try await container.prepare(input: effectiveInput)
         let promptTokens = tokenLength(lmInput.text.tokens)
@@ -124,10 +104,10 @@ public actor ModelRunner {
                 promptTokens: promptTokens
             )
         }
-
+        
         let generationStream = try await container.generate(
             input: lmInput,
-            parameters: effectiveParameters
+            parameters: parameters
         )
 
         var output = ""
@@ -248,12 +228,6 @@ private func trimChatMessagesInternal(
     }
 
     func countTokensForTrim(_ messages: [MLXLMCommon.Chat.Message]) async throws -> Int {
-        // For text-only chat, use model-accurate token counting via prepare(input:)
-        // to avoid template-estimation mismatch for multimodal-capable models.
-        if !hasMedia(messages) {
-            return try await tokenCount(for: buildInput(with: messages), container: container)
-        }
-
         return try await estimateTokenCount(
             messages: messages,
             tools: tools,
@@ -336,8 +310,7 @@ private func trimChatMessagesInternal(
         didTrimContent = true
     }
 
-    let finalInput = buildInput(with: workingMessages)
-    let finalTokenCount = try await tokenCount(for: finalInput, container: container)
+    let finalTokenCount = try await estimateTokenCount(messages: workingMessages, tools: tools, additionalContext: additionalContext, container: container)
 
     guard finalTokenCount <= limit else {
         modelRunnerLogger.error(
@@ -353,11 +326,6 @@ private func trimChatMessagesInternal(
     }
 
     return workingMessages
-}
-
-private func tokenCount(for input: MLXLMCommon.UserInput, container: ModelContainer) async throws -> Int {
-    let prepared = try await container.prepare(input: input)
-    return tokenLength(prepared.text.tokens)
 }
 
 private func estimateTokenCount(
