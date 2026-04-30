@@ -454,21 +454,19 @@ public enum CompletionsHandler {
             }
 
             // Use the Authorization: bearer str header for automatic KVCacheQuantization
-            if let authHeader = requestHead.headers.first(where: { $0.name.lowercased() == "authorization" })?.value {
-                let parts = authHeader.split(separator: " ", maxSplits: 1)
-                if parts.count == 2,
-                parts[0].lowercased() == "bearer" {
+            if let authValue = requestHead.headers["authorization"].first {
+                let parts = authValue.split(separator: " ", maxSplits: 1)
+                if parts.count == 2 && parts[0].lowercased() == "bearer" {
                     let tokenStr = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !tokenStr.isEmpty,
-                    let parsedInt = Int(tokenStr) {
-                        NSLog("SwamaKit.HTTPHandler: Authorization header suggests KV cache: \(parsedInt)")
+                    if !tokenStr.isEmpty, let parsedInt = Int(tokenStr) {
+                        NSLog("SwamaKit.HTTPHandler: Authorization header suggests \(parsedInt) bits")
                         payload.kb_bits = parsedInt
                     }
-               }
+                }
             }
             
             // Use custom header X-Prefill-Step-Size: Int[256|512|1024|2048] for adjusting chunking
-            if let prefillHeader = requestHead.headers.first(where: { $0.name.lowercased() == "x-prefill-step-size" })?.value {
+            if let prefillHeader = requestHead.headers["x-prefill-step-size"].first {
                 if !prefillHeader.isEmpty, let parsedInt = Int(prefillHeader.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     NSLog("SwamaKit.HTTPHandler: X-Prefill-Step-Size: \(parsedInt)")
                     payload.step_size = parsedInt
@@ -476,7 +474,7 @@ public enum CompletionsHandler {
             }
 
             // Use custom header X-Turbo-Quant-Key-Bits: Int
-            if let kBits = requestHead.headers.first(where: { $0.name.lowercased() == "x-turbo-quant-key-bits" })?.value {
+            if let kBits = requestHead.headers["x-turbo-quant-key-bits"].first {
                 if !kBits.isEmpty, let parsedInt = Int(kBits.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     NSLog("SwamaKit.HTTPHandler: X-Turbo-Quant-Key-bits: \(parsedInt)")
                     payload.k_bits = parsedInt
@@ -484,7 +482,7 @@ public enum CompletionsHandler {
             }
 
             // Use custom header X-Turbo-Quant-Value-Bits: Int
-            if let vBits = requestHead.headers.first(where: { $0.name.lowercased() == "x-turbo-quant-value-bits" })?.value {
+            if let vBits = requestHead.headers["x-turbo-quant-value-bits"].first {
                 if !vBits.isEmpty, let parsedInt = Int(vBits.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     NSLog("SwamaKit.HTTPHandler: X-Turbo-Quant-Value-bits: \(parsedInt)")
                     payload.v_bits = parsedInt
