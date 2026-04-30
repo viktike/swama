@@ -363,6 +363,9 @@ public actor ModelPool {
                     isVLM: isVLM
                 )
 
+                let tc_format = await container.configuration.toolCallFormat
+                NSLog("Inferred tool call format: \(tc_format)")
+                
                 // Prefill Cache
                 if (cacheConfig == nil) {
                     container.disableCaching()
@@ -390,6 +393,9 @@ public actor ModelPool {
                 modelName: modelName,
                 isVLM: isVLMModel
             )
+
+            let tc_format = await container.configuration.toolCallFormat
+            NSLog("Inferred tool call format: \(tc_format)")
             
             // Prefill Cache
             if (cacheConfig == nil) {
@@ -634,8 +640,7 @@ public actor ModelPool {
                 pagedBlockSize: pageBlockSize,
                 maxCacheBlocks: maxCacheBlocks,
                 ssmMaxEntries: ssm,
-                modelKey: modelName,
-                defaultKVMode: .none
+                modelKey: modelName
             )
         }
     }
@@ -1046,6 +1051,8 @@ public actor ModelPool {
 
         // Get reference to the model container before removing it
         let containerToEvict = cache[modelName]
+        
+        containerToEvict?.cacheCoordinator?.clear()
 
         // Remove from all caches to release strong references
         cache.removeValue(forKey: modelName)
