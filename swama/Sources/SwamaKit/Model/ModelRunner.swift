@@ -91,9 +91,7 @@ public actor ModelRunner {
                 additionalContext: userInput.additionalContext
             )
         }
-        
-        NSLog("[Quantization] Final: \(parameters.kvMode)")
-        
+                
         // Prepare once for token count
         let lmInput = try await container.prepare(input: effectiveInput)
         let promptTokens = tokenLength(lmInput.text.tokens)
