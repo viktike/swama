@@ -145,6 +145,10 @@ public actor ModelRunner {
             if coordinator.isHybrid {
                 let ssmStats = coordinator.ssmStateCache
                 NSLog("SSM hits: \(ssmStats.hits) / misses: \(ssmStats.misses)")
+                if ssmStats.misses != 0 {
+                    coordinator.clear()
+                    NSLog("New conversation, cleared the prompt cache")
+                }
             }
         }
         
